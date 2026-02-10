@@ -1,0 +1,32 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: amaanq <git@amaanq.com>
+Date: Mon, 10 Feb 2026 00:00:00 +0000
+Subject: [PATCH] enable EFI_DISABLE_PCI_DMA by default
+
+Clear the busmaster bit on all PCI bridges during ExitBootServices() to
+close the DMA attack window between firmware IOMMU teardown and Linux
+IOMMU initialization. This prevents Thunderbolt/PCIe DMA attacks during
+the boot window.
+
+Can be overridden at boot with efi=no_disable_early_pci_dma.
+
+Signed-off-by: amaanq <git@amaanq.com>
+---
+ drivers/firmware/efi/Kconfig | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/drivers/firmware/efi/Kconfig b/drivers/firmware/efi/Kconfig
+index 29e0729299f5..246bd66d8ec0 100644
+--- a/drivers/firmware/efi/Kconfig
++++ b/drivers/firmware/efi/Kconfig
+@@ -196,6 +196,7 @@
+
+ config EFI_DISABLE_PCI_DMA
+        bool "Clear Busmaster bit on PCI bridges during ExitBootServices()"
++       default y
+        help
+ 	  Disable the busmaster bit in the control register on all PCI bridges
+ 	  while calling ExitBootServices() and passing control to the runtime
+-- 
+2.48.1
+

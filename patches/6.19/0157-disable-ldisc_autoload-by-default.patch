@@ -1,0 +1,32 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: amaanq <git@amaanq.com>
+Date: Mon, 10 Feb 2026 00:00:00 +0000
+Subject: [PATCH] disable LDISC_AUTOLOAD by default
+
+Disable automatic loading of TTY line discipline modules by default.
+Line disciplines (SLIP, PPP, n_hdlc, etc.) are a historically rich
+exploit target and rarely needed on modern systems. Users who need
+specific line disciplines can re-enable via the dev.tty.ldisc_autoload
+sysctl or by setting CONFIG_LDISC_AUTOLOAD=y.
+
+Signed-off-by: amaanq <git@amaanq.com>
+---
+ drivers/tty/Kconfig | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/drivers/tty/Kconfig b/drivers/tty/Kconfig
+index 149f3d53b760..e4e0327157d2 100644
+--- a/drivers/tty/Kconfig
++++ b/drivers/tty/Kconfig
+@@ -168,7 +168,7 @@
+
+ config LDISC_AUTOLOAD
+ 	bool "Automatically load TTY Line Disciplines"
+-	default y
++	default n
+ 	help
+ 	  Historically the kernel has always automatically loaded any
+ 	  line discipline that is in a kernel module when a user asks
+-- 
+2.48.1
+

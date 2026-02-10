@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: amaanq <git@amaanq.com>
+Date: Mon, 10 Feb 2026 00:00:00 +0000
+Subject: [PATCH] disable BINFMT_MISC by default
+
+Disable the misc binary format handler by default. BINFMT_MISC allows
+registering arbitrary binary format handlers via procfs, which is an
+unnecessary attack surface for most systems. Users who need it (QEMU
+user-mode, Wine binfmt integration) can re-enable it.
+
+Signed-off-by: amaanq <git@amaanq.com>
+---
+ fs/Kconfig.binfmt | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/fs/Kconfig.binfmt b/fs/Kconfig.binfmt
+index 1949e25c7741..3109088269 100644
+--- a/fs/Kconfig.binfmt
++++ b/fs/Kconfig.binfmt
+@@ -144,6 +144,7 @@
+
+ config BINFMT_MISC
+ 	tristate "Kernel support for MISC binaries"
++	default n
+ 	help
+ 	  If you say Y here, it will be possible to plug wrapper-driven binary
+ 	  formats into the kernel. You will like this especially when you use
+-- 
+2.48.1
+

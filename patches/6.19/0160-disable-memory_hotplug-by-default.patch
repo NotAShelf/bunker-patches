@@ -1,0 +1,30 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: amaanq <git@amaanq.com>
+Date: Mon, 10 Feb 2026 00:00:00 +0000
+Subject: [PATCH] disable MEMORY_HOTPLUG by default
+
+Disable runtime physical memory map modification by default. Memory
+hotplug is only needed for virtio-mem VMs and enterprise hot-add
+scenarios. Removing it reduces attack surface by preventing runtime
+modification of the physical memory map.
+
+Signed-off-by: amaanq <git@amaanq.com>
+---
+ mm/Kconfig | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/mm/Kconfig b/mm/Kconfig
+index a992f2203eb9..8c25d96e5369 100644
+--- a/mm/Kconfig
++++ b/mm/Kconfig
+@@ -483,6 +483,7 @@
+ menuconfig MEMORY_HOTPLUG
+ 	bool "Memory hotplug"
+ 	select MEMORY_ISOLATION
++	default n
+ 	depends on SPARSEMEM
+ 	depends on ARCH_ENABLE_MEMORY_HOTPLUG
+ 	depends on 64BIT
+-- 
+2.48.1
+
