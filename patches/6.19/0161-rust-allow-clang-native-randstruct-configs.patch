@@ -42,7 +42,6 @@ index 0c20f40c35fe..b9c9dc9d4ebb 100644
 -# define randomized_struct_fields_start
 -# define randomized_struct_fields_end
  #endif
-
 diff --git a/include/linux/sched.h b/include/linux/sched.h
 index 2c2c20d64c04..e55d7f30e3f8 100644
 --- a/include/linux/sched.h
@@ -63,7 +62,6 @@ index 2c2c20d64c04..e55d7f30e3f8 100644
 -	randomized_struct_fields_end
 +	} __randomize_layout;
  } __attribute__ ((aligned (64)));
-
 diff --git a/init/Kconfig b/init/Kconfig
 index 530a382ee0fe..d2a04c3c86ab 100644
 --- a/init/Kconfig
@@ -79,7 +77,6 @@ index 530a382ee0fe..d2a04c3c86ab 100644
  	depends on !DEBUG_INFO_BTF || (PAHOLE_HAS_LANG_EXCLUDE && !LTO)
  	depends on !CFI || HAVE_CFI_ICALL_NORMALIZE_INTEGERS_RUSTC
  	select CFI_ICALL_NORMALIZE_INTEGERS if CFI
-
 diff --git a/rust/kernel/task.rs b/rust/kernel/task.rs
 index 5bce090a3869..a3cb58e49fe7 100644
 --- a/rust/kernel/task.rs
