@@ -8,7 +8,6 @@ hotplug is only needed for virtio-mem VMs and enterprise hot-add
 scenarios. Removing it reduces attack surface by preventing runtime
 modification of the physical memory map.
 
-Signed-off-by: amaanq <git@amaanq.com>
 ---
  mm/Kconfig | 1 +
  1 file changed, 1 insertion(+)

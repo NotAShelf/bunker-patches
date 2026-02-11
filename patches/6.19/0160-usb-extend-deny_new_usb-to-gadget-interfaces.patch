@@ -15,7 +15,6 @@ soft_connect sysfs, and usb_gadget_activate().
 udc/core.c already includes <linux/usb.h>, so deny_new_usb is
 directly accessible with no new includes needed.
 
-Signed-off-by: amaanq <git@amaanq.com>
 ---
  drivers/usb/gadget/udc/core.c | 5 +++++
  1 file changed, 5 insertions(+)

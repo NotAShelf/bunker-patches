@@ -10,7 +10,6 @@ the boot window.
 
 Can be overridden at boot with efi=no_disable_early_pci_dma.
 
-Signed-off-by: amaanq <git@amaanq.com>
 ---
  drivers/firmware/efi/Kconfig | 1 +
  1 file changed, 1 insertion(+)
