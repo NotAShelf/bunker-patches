@@ -1,5 +1,5 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
-From: amaanq <git@amaanq.com>
+From: Levente Polyak <levente@leventepolyak.net>
 Date: Mon, 10 Feb 2026 00:00:00 +0000
 Subject: [PATCH 160/162] usb: extend deny_new_usb to gadget interfaces
 
