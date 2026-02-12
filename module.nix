@@ -25,6 +25,20 @@ let
 
   cfg = config.bunker.kernel;
 
+  # "6.18.6" → "6.18", "6.19" → "6.19"
+  majorMinor =
+    let
+      parts = lib.splitString "." cfg.version;
+    in
+    "${builtins.elemAt parts 0}.${builtins.elemAt parts 1}";
+
+  # "6.18.6" → "6.18.6", "6.19" → "6.19.0"
+  fullVersion =
+    let
+      parts = lib.splitString "." cfg.version;
+    in
+    if builtins.length parts >= 3 then cfg.version else "${cfg.version}.0";
+
   # Patch group → 4-digit prefix strings
   patchGroups = {
     base = [ "0015" ];
@@ -128,7 +142,7 @@ let
     };
   };
 
-  extra = versionExtra.${cfg.version} or { };
+  extra = versionExtra.${majorMinor} or { };
 
   enabledGroups = [
     "base"
@@ -143,7 +157,7 @@ let
   enabledSet = lib.genAttrs enabledNumbers (_: true);
 
   # All patch files from the patches directory, sorted numerically
-  patchDir = "${flake}/patches/${cfg.version}";
+  patchDir = "${flake}/patches/${majorMinor}";
   allPatchFiles =
     builtins.filter (n: lib.hasSuffix ".patch" n) (builtins.attrNames (builtins.readDir patchDir))
     |> builtins.sort builtins.lessThan;
@@ -165,7 +179,7 @@ let
 
   sourceHash =
     {
-      "6.18" = "sha256-kQakYF2p4x/xdlnZWHgrgV+VkaswjQOw7iGq1sfc7Us=";
+      "6.18.6" = "sha256-RySXGXsvaNTb8bwyzG3GacoiD/TA6w3Dmpz/moj5oxs=";
       "6.19" = "sha256-MDB5qCULjzgfgrA/kEY9EqyY1PaxSbdh6nWvEyNSE1c=";
     }
     .${cfg.version} or (throw "bunker: no source hash for kernel ${cfg.version}");
@@ -173,7 +187,7 @@ let
   kernelSrc = pkgs.fetchurl {
     url = "https://cdn.kernel.org/pub/linux/kernel/v${
       builtins.substring 0 1 cfg.version
-    }.x/linux-${cfg.version}.tar.xz";
+    }.x/linux-${fullVersion}.tar.xz";
     hash = sourceHash;
   };
 
@@ -270,8 +284,8 @@ let
     pname = "linux-bunker";
     stdenv = llvmStdenv;
     src = kernelSrc;
-    version = "${cfg.version}.0";
-    modDirVersion = "${cfg.version}.0-bunker";
+    version = fullVersion;
+    modDirVersion = "${fullVersion}-bunker";
     inherit kernelPatches;
 
     structuredExtraConfig =
@@ -284,7 +298,7 @@ let
       // cpuArchConfig;
 
     extraMeta = {
-      branch = cfg.version;
+      branch = majorMinor;
       description = "Bunker kernel";
     };
   };
@@ -311,9 +325,12 @@ in
     enable = mkEnableOption "Bunker kernel";
 
     version = mkOption {
-      type = types.str;
+      type = types.enum [
+        "6.18.6"
+        "6.19"
+      ];
       default = "6.19";
-      description = "Linux kernel version to build.";
+      description = "Linux kernel version to build. Use point releases for stable branches (e.g. 6.18.6).";
     };
 
     interactive = mkOption {
