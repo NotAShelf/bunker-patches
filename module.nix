@@ -212,7 +212,7 @@ let
   kernelSrc = pkgs.fetchurl {
     url = "https://cdn.kernel.org/pub/linux/kernel/v${
       builtins.substring 0 1 cfg.version
-    }.x/linux-${fullVersion}.tar.xz";
+    }.x/linux-${resolvedVersion}.tar.xz";
     hash = sourceHash;
   };
 
