@@ -1,0 +1,133 @@
+From 4725344462362e2ce2645f354737a8ea4280fa57 Mon Sep 17 00:00:00 2001
+From: Eric Dumazet <edumazet@google.com>
+Date: Sat, 29 Nov 2025 09:57:40 +0000
+Subject: [PATCH] time/timecounter: Inline timecounter_cyc2time()
+
+New network transport protocols want NIC drivers to get hardware timestamps
+of all incoming packets, and possibly all outgoing packets.
+
+One example is the upcoming 'Swift congestion control' which is used by TCP
+transport and is the primary need for timecounter_cyc2time(). This means
+timecounter_cyc2time() can be called more than 100 million times per second
+on a busy server.
+
+Inlining timecounter_cyc2time() brings a 12% improvement on a UDP receive
+stress test on a 100Gbit NIC.
+
+Note that FDO, LTO, PGO are unable to magically help for this case,
+presumably because NIC drivers are almost exclusively shipped as modules.
+
+Add an unlikely() around the cc_cyc2ns_backwards() case, even if FDO (when
+used) is able to take care of this optimization.
+
+Signed-off-by: Eric Dumazet <edumazet@google.com>
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Link: https://research.google/pubs/swift-delay-is-simple-and-effective-for-congestion-control-in-the-datacenter/
+Link: https://patch.msgid.link/20251129095740.3338476-1-edumazet@google.com
+---
+ include/linux/timecounter.h | 31 +++++++++++++++++++++++++++++--
+ kernel/time/timecounter.c   | 35 -----------------------------------
+ 2 files changed, 29 insertions(+), 37 deletions(-)
+
+diff --git a/include/linux/timecounter.h b/include/linux/timecounter.h
+index dce03a5cafb7..7de6b350e559 100644
+--- a/include/linux/timecounter.h
++++ b/include/linux/timecounter.h
+@@ -113,10 +113,19 @@ extern void timecounter_init(struct timecounter *tc,
+  *
+  * Returns: nanoseconds since the initial time stamp
+  */
+ extern u64 timecounter_read(struct timecounter *tc);
+ 
++/*
++ * This is like cyclecounter_cyc2ns(), but it is used for computing a
++ * time previous to the time stored in the cycle counter.
++ */
++static inline u64 cc_cyc2ns_backwards(const struct cyclecounter *cc, u64 cycles, u64 frac)
++{
++	return ((cycles * cc->mult) - frac) >> cc->shift;
++}
++
+ /**
+  * timecounter_cyc2time - convert a cycle counter to same
+  *                        time base as values returned by
+  *                        timecounter_read()
+  * @tc:		Pointer to time counter.
+@@ -129,9 +138,27 @@ extern u64 timecounter_read(struct timecounter *tc);
+  * This allows conversion of cycle counter values which were generated
+  * in the past.
+  *
+  * Returns: cycle counter converted to nanoseconds since the initial time stamp
+  */
+-extern u64 timecounter_cyc2time(const struct timecounter *tc,
+-				u64 cycle_tstamp);
++static inline u64 timecounter_cyc2time(const struct timecounter *tc, u64 cycle_tstamp)
++{
++	const struct cyclecounter *cc = tc->cc;
++	u64 delta = (cycle_tstamp - tc->cycle_last) & cc->mask;
++	u64 nsec = tc->nsec, frac = tc->frac;
++
++	/*
++	 * Instead of always treating cycle_tstamp as more recent than
++	 * tc->cycle_last, detect when it is too far in the future and
++	 * treat it as old time stamp instead.
++	 */
++	if (unlikely(delta > cc->mask / 2)) {
++		delta = (tc->cycle_last - cycle_tstamp) & cc->mask;
++		nsec -= cc_cyc2ns_backwards(cc, delta, frac);
++	} else {
++		nsec += cyclecounter_cyc2ns(cc, delta, tc->mask, &frac);
++	}
++
++	return nsec;
++}
+ 
+ #endif
+diff --git a/kernel/time/timecounter.c b/kernel/time/timecounter.c
+index 3d2a354cfe1c..2e64dbb6302d 100644
+--- a/kernel/time/timecounter.c
++++ b/kernel/time/timecounter.c
+@@ -60,40 +60,5 @@ u64 timecounter_read(struct timecounter *tc)
+ 
+ 	return nsec;
+ }
+ EXPORT_SYMBOL_GPL(timecounter_read);
+ 
+-/*
+- * This is like cyclecounter_cyc2ns(), but it is used for computing a
+- * time previous to the time stored in the cycle counter.
+- */
+-static u64 cc_cyc2ns_backwards(const struct cyclecounter *cc,
+-			       u64 cycles, u64 mask, u64 frac)
+-{
+-	u64 ns = (u64) cycles;
+-
+-	ns = ((ns * cc->mult) - frac) >> cc->shift;
+-
+-	return ns;
+-}
+-
+-u64 timecounter_cyc2time(const struct timecounter *tc,
+-			 u64 cycle_tstamp)
+-{
+-	u64 delta = (cycle_tstamp - tc->cycle_last) & tc->cc->mask;
+-	u64 nsec = tc->nsec, frac = tc->frac;
+-
+-	/*
+-	 * Instead of always treating cycle_tstamp as more recent
+-	 * than tc->cycle_last, detect when it is too far in the
+-	 * future and treat it as old time stamp instead.
+-	 */
+-	if (delta > tc->cc->mask / 2) {
+-		delta = (tc->cycle_last - cycle_tstamp) & tc->cc->mask;
+-		nsec -= cc_cyc2ns_backwards(tc->cc, delta, tc->mask, frac);
+-	} else {
+-		nsec += cyclecounter_cyc2ns(tc->cc, delta, tc->mask, &frac);
+-	}
+-
+-	return nsec;
+-}
+-EXPORT_SYMBOL_GPL(timecounter_cyc2time);
+-- 
+2.52.0
+

@@ -1,0 +1,167 @@
+From 529676cabcf4a5046d217bba2c8f3b94a3f6a10f Mon Sep 17 00:00:00 2001
+From: Eric Dumazet <edumazet@google.com>
+Date: Thu, 13 Nov 2025 15:45:45 +0000
+Subject: [PATCH] x86/lib: Inline csum_ipv6_magic()
+
+Inline this small helper. It has been observed to consume up
+to 0.75%, which is significant for such a small function.
+
+This should reduce register pressure, as saddr and daddr are often
+back to back in memory.
+
+For instance code inlined in tcp6_gro_receive() will look like:
+
+ 55a:	48 03 73 28          	add    0x28(%rbx),%rsi
+ 55e:	8b 43 70             	mov    0x70(%rbx),%eax
+ 561:	29 f8                	sub    %edi,%eax
+ 563:	0f c8                	bswap  %eax
+ 565:	89 c0                	mov    %eax,%eax
+ 567:	48 05 00 06 00 00    	add    $0x600,%rax
+ 56d:	48 03 46 08          	add    0x8(%rsi),%rax
+ 571:	48 13 46 10          	adc    0x10(%rsi),%rax
+ 575:	48 13 46 18          	adc    0x18(%rsi),%rax
+ 579:	48 13 46 20          	adc    0x20(%rsi),%rax
+ 57d:	48 83 d0 00          	adc    $0x0,%rax
+ 581:	48 89 c6             	mov    %rax,%rsi
+ 584:	48 c1 ee 20          	shr    $0x20,%rsi
+ 588:	01 f0                	add    %esi,%eax
+ 58a:	83 d0 00             	adc    $0x0,%eax
+ 58d:	89 c6                	mov    %eax,%esi
+ 58f:	66 31 c0             	xor    %ax,%ax
+
+Surprisingly, this inlining does not seem to bloat kernel text size.
+It at least two cases[1], it either has no effect or results in a
+slightly smaller kernel.
+
+1. https://lore.kernel.org/all/CANn89iJzcb_XO9oCApKYfRxsMMmg7BHukRDqWTca3ZLQ8HT0iQ@mail.gmail.com/
+
+[ dhansen: add justification and note about lack of kernel bloat ]
+
+Signed-off-by: Eric Dumazet <edumazet@google.com>
+Signed-off-by: Dave Hansen <dave.hansen@linux.intel.com>
+Acked-by: Dave Hansen <dave.hansen@linux.intel.com>
+Link: https://patch.msgid.link/20251113154545.594580-1-edumazet@google.com
+---
+ arch/x86/include/asm/checksum_64.h | 45 ++++++++++++++++++++++--------
+ arch/x86/lib/csum-wrappers_64.c    | 22 ---------------
+ 2 files changed, 33 insertions(+), 34 deletions(-)
+
+diff --git a/arch/x86/include/asm/checksum_64.h b/arch/x86/include/asm/checksum_64.h
+index 4d4a47a3a8ab..5bdfd2db2b5a 100644
+--- a/arch/x86/include/asm/checksum_64.h
++++ b/arch/x86/include/asm/checksum_64.h
+@@ -7,10 +7,11 @@
+  * Copyright 2002 by Andi Kleen, SuSE Labs
+  * with some code from asm-x86/checksum.h
+  */
+ 
+ #include <linux/compiler.h>
++#include <linux/in6.h>
+ #include <asm/byteorder.h>
+ 
+ /**
+  * csum_fold - Fold and invert a 32bit checksum.
+  * sum: 32bit unfolded sum
+@@ -143,10 +144,21 @@ extern __wsum csum_partial_copy_nocheck(const void *src, void *dst, int len);
+  * Returns the 16bit folded/inverted checksum of the passed buffer.
+  * Ready to fill in.
+  */
+ extern __sum16 ip_compute_csum(const void *buff, int len);
+ 
++static inline unsigned add32_with_carry(unsigned a, unsigned b)
++{
++	asm("addl %2,%0\n\t"
++	    "adcl $0,%0"
++	    : "=r" (a)
++	    : "0" (a), "rm" (b));
++	return a;
++}
++
++#define _HAVE_ARCH_IPV6_CSUM 1
++
+ /**
+  * csum_ipv6_magic - Compute checksum of an IPv6 pseudo header.
+  * @saddr: source address
+  * @daddr: destination address
+  * @len: length of packet
+@@ -156,24 +168,33 @@ extern __sum16 ip_compute_csum(const void *buff, int len);
+  * Computes an IPv6 pseudo header checksum. This sum is added the checksum
+  * into UDP/TCP packets and contains some link layer information.
+  * Returns the unfolded 32bit checksum.
+  */
+ 
+-struct in6_addr;
++static inline __sum16 csum_ipv6_magic(
++	const struct in6_addr *_saddr, const struct in6_addr *_daddr,
++	__u32 len, __u8 proto, __wsum sum)
++{
++	const unsigned long *saddr = (const unsigned long *)_saddr;
++	const unsigned long *daddr = (const unsigned long *)_daddr;
++	__u64 sum64;
+ 
+-#define _HAVE_ARCH_IPV6_CSUM 1
+-extern __sum16
+-csum_ipv6_magic(const struct in6_addr *saddr, const struct in6_addr *daddr,
+-		__u32 len, __u8 proto, __wsum sum);
++	sum64 = (__force __u64)htonl(len) + (__force __u64)htons(proto) +
++		(__force __u64)sum;
+ 
+-static inline unsigned add32_with_carry(unsigned a, unsigned b)
+-{
+-	asm("addl %2,%0\n\t"
+-	    "adcl $0,%0"
+-	    : "=r" (a)
+-	    : "0" (a), "rm" (b));
+-	return a;
++	asm("	addq %1,%[sum64]\n"
++	    "	adcq %2,%[sum64]\n"
++	    "	adcq %3,%[sum64]\n"
++	    "	adcq %4,%[sum64]\n"
++	    "	adcq $0,%[sum64]\n"
++
++	    : [sum64] "+r" (sum64)
++	    : "m" (saddr[0]), "m" (saddr[1]),
++	      "m" (daddr[0]), "m" (daddr[1]));
++
++	return csum_fold(
++	       (__force __wsum)add32_with_carry(sum64 & 0xffffffff, sum64>>32));
+ }
+ 
+ #define HAVE_ARCH_CSUM_ADD
+ static inline __wsum csum_add(__wsum csum, __wsum addend)
+ {
+diff --git a/arch/x86/lib/csum-wrappers_64.c b/arch/x86/lib/csum-wrappers_64.c
+index f4df4d241526..831b7110b041 100644
+--- a/arch/x86/lib/csum-wrappers_64.c
++++ b/arch/x86/lib/csum-wrappers_64.c
+@@ -66,27 +66,5 @@ csum_partial_copy_nocheck(const void *src, void *dst, int len)
+ {
+ 	return csum_partial_copy_generic(src, dst, len);
+ }
+ EXPORT_SYMBOL(csum_partial_copy_nocheck);
+ 
+-__sum16 csum_ipv6_magic(const struct in6_addr *saddr,
+-			const struct in6_addr *daddr,
+-			__u32 len, __u8 proto, __wsum sum)
+-{
+-	__u64 rest, sum64;
+-
+-	rest = (__force __u64)htonl(len) + (__force __u64)htons(proto) +
+-		(__force __u64)sum;
+-
+-	asm("	addq (%[saddr]),%[sum]\n"
+-	    "	adcq 8(%[saddr]),%[sum]\n"
+-	    "	adcq (%[daddr]),%[sum]\n"
+-	    "	adcq 8(%[daddr]),%[sum]\n"
+-	    "	adcq $0,%[sum]\n"
+-
+-	    : [sum] "=r" (sum64)
+-	    : "[sum]" (rest), [saddr] "r" (saddr), [daddr] "r" (daddr));
+-
+-	return csum_fold(
+-	       (__force __wsum)add32_with_carry(sum64 & 0xffffffff, sum64>>32));
+-}
+-EXPORT_SYMBOL(csum_ipv6_magic);
+-- 
+2.52.0
+
