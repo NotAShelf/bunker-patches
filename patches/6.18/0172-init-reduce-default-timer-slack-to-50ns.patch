@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Arjan van de Ven <arjan@linux.intel.com>
 Date: Mon, 30 Oct 2023 15:12:13 +0000
-Subject: [PATCH 172/184] init: reduce default timer slack to 50ns
+Subject: [PATCH 172/194] init: reduce default timer slack to 50ns
 
 Reduce the default timer slack from 50 microseconds to 50 nanoseconds.
 This provides tighter wake-up latency for interactive workloads at a

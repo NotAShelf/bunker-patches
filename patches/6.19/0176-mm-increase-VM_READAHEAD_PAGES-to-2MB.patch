@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Peter Jung <admin@ptr1337.dev>
 Date: Tue, 11 Feb 2026 01:39:49 +0800
-Subject: [PATCH 176/180] mm: increase VM_READAHEAD_PAGES to 2MB
+Subject: [PATCH 176/190] mm: increase VM_READAHEAD_PAGES to 2MB
 
 Increase the default readahead window from 128KB to 2MB. This improves
 sequential read performance for large files by allowing the kernel to

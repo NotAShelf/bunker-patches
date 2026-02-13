@@ -1,7 +1,7 @@
 From 4ba5a01513a6b3487613e7186cac4f3f2f4c5091 Mon Sep 17 00:00:00 2001
 From: Colin Ian King <colin.i.king@intel.com>
 Date: Wed, 24 Apr 2024 16:45:47 +0100
-Subject: [PATCH 169/184] net: sock: increase _SK_MEM_PACKETS to 1024
+Subject: [PATCH 169/194] net: sock: increase _SK_MEM_PACKETS to 1024
 
 Scale _SK_MEM_PACKETS by a factor of 4 to improve socket performance.
 

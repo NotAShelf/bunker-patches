@@ -1,7 +1,7 @@
 From eae943f2b22979ae1b378d72f9b94085577f5800 Mon Sep 17 00:00:00 2001
 From: Colin Ian King <colin.i.king@intel.com>
 Date: Mon, 17 Mar 2025 12:03:19 +0000
-Subject: [PATCH 177/180] sched/core: add branch hints based on gcov analysis
+Subject: [PATCH 177/190] sched/core: add branch hints based on gcov analysis
 
 Add likely/unlikely branch hints to hot paths in the scheduler core
 based on gcov coverage analysis. These annotations help the compiler

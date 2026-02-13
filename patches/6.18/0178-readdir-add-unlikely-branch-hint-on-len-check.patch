@@ -1,7 +1,7 @@
 From 09c259399447ca0d828c65946b7d938e4692d593 Mon Sep 17 00:00:00 2001
 From: Colin Ian King <colin.i.king@gmail.com>
 Date: Tue, 27 May 2025 15:12:58 +0100
-Subject: [PATCH 178/184] readdir: add unlikely branch hint on len check
+Subject: [PATCH 178/194] readdir: add unlikely branch hint on len check
 
 Add an unlikely hint on the error return path check in
 verify_dirent_name(). This improves performance when testing with

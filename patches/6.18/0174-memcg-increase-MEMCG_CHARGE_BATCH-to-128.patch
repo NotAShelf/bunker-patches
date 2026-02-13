@@ -1,7 +1,7 @@
 From 0841fd2c59e7d4c4dc55bbdc4e69d08db775df68 Mon Sep 17 00:00:00 2001
 From: Colin Ian King <colin.i.king@intel.com>
 Date: Thu, 22 May 2025 15:23:07 +0100
-Subject: [PATCH 174/184] memcg: increase MEMCG_CHARGE_BATCH to 128
+Subject: [PATCH 174/194] memcg: increase MEMCG_CHARGE_BATCH to 128
 
 MEMCG_CHARGE_BATCH was last changed to 64 back in 2022, systems have
 grown in memory and speed and it's useful to increase this to 128.

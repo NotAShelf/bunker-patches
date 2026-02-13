@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Arjan van de Ven <arjan@linux.intel.com>
 Date: Fri, 6 Jan 2017 15:34:09 +0000
-Subject: [PATCH 168/180] tcp: raise per-socket write memory limit to 16MB
+Subject: [PATCH 168/190] tcp: raise per-socket write memory limit to 16MB
 
 Allow the per-socket TCP write buffer limit to go to 16MB instead of
 4MB. The read side was already raised to 32MB in mainline 6.19.

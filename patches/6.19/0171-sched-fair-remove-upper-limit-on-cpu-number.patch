@@ -1,7 +1,7 @@
 From 362f86369d1930ad177acaa47225d24d26b02c8d Mon Sep 17 00:00:00 2001
 From: Colin Ian King <colin.i.king@intel.com>
 Date: Tue, 14 Nov 2023 13:29:45 +0000
-Subject: [PATCH 171/180] sched/fair: remove upper limit on cpu number
+Subject: [PATCH 171/190] sched/fair: remove upper limit on cpu number
 
 Remove the 8-CPU cap on get_update_sysctl_factor(). On systems with
 more than 8 cores (e.g. Zen 4 with 16+ threads), the scheduler tuning

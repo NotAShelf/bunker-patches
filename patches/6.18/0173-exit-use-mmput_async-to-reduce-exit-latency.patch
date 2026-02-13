@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Arjan van de Ven <arjan@linux.intel.com>
 Date: Fri, 18 Nov 2022 17:25:22 +0000
-Subject: [PATCH 173/184] exit: use mmput_async to reduce exit latency
+Subject: [PATCH 173/194] exit: use mmput_async to reduce exit latency
 
 Use mmput_async() instead of mmput() in exit_mm() to defer mm teardown
 to a worker thread. This reduces exit latency for processes with large
