@@ -39,7 +39,7 @@ diff --git a/kernel/sched/core.c b/kernel/sched/core.c
 
 -	if (!sched_core_enabled(rq))
 +	if (likely(!sched_core_enabled(rq)))
- 		return __pick_next_task(rq, prev);
+ 		return __pick_next_task(rq, prev, rf);
 
  	cpu = cpu_of(rq);
 @@ -7369,7 +7369,7 @@
