@@ -336,6 +336,16 @@ let
 
   kernelPackage = pkgs.linuxKernel.packagesFor (
     bunkernel.overrideAttrs (old: {
+      # The Clang+LTO+Rust kernel binary embeds build tool store paths
+      # (CC, LD, RUSTC, etc.) that Nix's reference scanner picks up as
+      # runtime dependencies.  The kernel image is loaded by the bootloader
+      # and has zero legitimate runtime store-path dependencies, so we can
+      # safely discard all detected references from $out.
+      # Requires __structuredAttrs = true (already set by nixpkgs' buildLinux).
+      unsafeDiscardReferences = (old.unsafeDiscardReferences or { }) // {
+        out = true;
+      };
+
       postInstall =
         builtins.replaceStrings
           [ "# Keep whole scripts dir" ]
