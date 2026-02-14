@@ -1,0 +1,320 @@
+From 6cfc31040f43af2e9375b70ce280ce5018d4be12 Mon Sep 17 00:00:00 2001
+From: Amaan Qureshi <git@amaanq.com>
+Date: Fri, 13 Feb 2026 23:10:38 -0500
+Subject: [PATCH] rseq: Implement time slice extension enforcement timer
+
+---
+ Documentation/admin-guide/sysctl/kernel.rst |  11 ++
+ include/linux/rseq_entry.h                  |  38 ++++--
+ include/linux/rseq_types.h                  |   2 +
+ kernel/rseq.c                               | 132 +++++++++++++++++++-
+ 4 files changed, 170 insertions(+), 13 deletions(-)
+
+diff --git a/Documentation/admin-guide/sysctl/kernel.rst b/Documentation/admin-guide/sysctl/kernel.rst
+index 239da22c4e28..b09d18e0f75b 100644
+--- a/Documentation/admin-guide/sysctl/kernel.rst
++++ b/Documentation/admin-guide/sysctl/kernel.rst
+@@ -1246,10 +1246,21 @@ reboot-cmd (SPARC only)
+ 
+ ??? This seems to be a way to give an argument to the Sparc
+ ROM/Flash boot loader. Maybe to tell it what to do after
+ rebooting. ???
+ 
++rseq_slice_extension_nsec
++=========================
++
++A task can request to delay its scheduling if it is in a critical section
++via the prctl(PR_RSEQ_SLICE_EXTENSION_SET) mechanism. This sets the maximum
++allowed extension in nanoseconds before scheduling of the task is enforced.
++Default value is 10000ns (10us). The possible range is 10000ns (10us) to
++50000ns (50us).
++
++This value has a direct correlation to the worst case scheduling latency;
++increment at your own risk.
+ 
+ sched_energy_aware
+ ==================
+ 
+ Enables/disables Energy Aware Scheduling (EAS). EAS starts
+diff --git a/include/linux/rseq_entry.h b/include/linux/rseq_entry.h
+index 54d8e338b26e..8d04611056aa 100644
+--- a/include/linux/rseq_entry.h
++++ b/include/linux/rseq_entry.h
+@@ -85,12 +85,28 @@ DECLARE_STATIC_KEY_TRUE(rseq_slice_extension_key);
+ 
+ static __always_inline bool rseq_slice_extension_enabled(void)
+ {
+ 	return static_branch_likely(&rseq_slice_extension_key);
+ }
++
++extern unsigned int rseq_slice_ext_nsecs;
++bool __rseq_arm_slice_extension_timer(void);
++
++static __always_inline bool rseq_arm_slice_extension_timer(void)
++{
++	if (!rseq_slice_extension_enabled())
++		return false;
++
++	if (likely(!current->rseq.slice.state.granted))
++		return false;
++
++	return __rseq_arm_slice_extension_timer();
++}
++
+ #else /* CONFIG_RSEQ_SLICE_EXTENSION */
+ static inline bool rseq_slice_extension_enabled(void) { return false; }
++static inline bool rseq_arm_slice_extension_timer(void) { return false; }
+ #endif /* !CONFIG_RSEQ_SLICE_EXTENSION */
+ 
+ bool rseq_debug_update_user_cs(struct task_struct *t, struct pt_regs *regs, unsigned long csaddr);
+ bool rseq_debug_validate_ids(struct task_struct *t);
+ 
+@@ -541,21 +557,23 @@ static __always_inline void clear_tif_rseq(void) { }
+ #endif
+ 
+ static __always_inline bool
+ rseq_exit_to_user_mode_restart(struct pt_regs *regs, unsigned long ti_work)
+ {
+-	if (likely(!test_tif_rseq(ti_work)))
+-		return false;
+-
+-	if (unlikely(__rseq_exit_to_user_mode_restart(regs))) {
+-		current->rseq.event.slowpath = true;
+-		set_tsk_thread_flag(current, TIF_NOTIFY_RESUME);
+-		return true;
++	if (unlikely(test_tif_rseq(ti_work))) {
++		if (unlikely(__rseq_exit_to_user_mode_restart(regs))) {
++			current->rseq.event.slowpath = true;
++			set_tsk_thread_flag(current, TIF_NOTIFY_RESUME);
++			return true;
++		}
++		clear_tif_rseq();
+ 	}
+-
+-	clear_tif_rseq();
+-	return false;
++	/*
++	 * Arm the slice extension timer if nothing to do anymore and the
++	 * task really goes out to user space.
++	 */
++	return rseq_arm_slice_extension_timer();
+ }
+ 
+ #else /* CONFIG_GENERIC_ENTRY */
+ static inline bool rseq_exit_to_user_mode_restart(struct pt_regs *regs, unsigned long ti_work)
+ {
+diff --git a/include/linux/rseq_types.h b/include/linux/rseq_types.h
+index 72d339a2f2aa..da5fa6f40294 100644
+--- a/include/linux/rseq_types.h
++++ b/include/linux/rseq_types.h
+@@ -87,14 +87,16 @@ union rseq_slice_state {
+ };
+ 
+ /**
+  * struct rseq_slice - Status information for rseq time slice extension
+  * @state:	Time slice extension state
++ * @expires:	The time when a grant expires
+  * @yielded:	Indicator for rseq_slice_yield()
+  */
+ struct rseq_slice {
+ 	union rseq_slice_state	state;
++	u64			expires;
+ 	u8			yielded;
+ };
+ 
+ /**
+  * struct rseq_data - Storage for all rseq related data
+diff --git a/kernel/rseq.c b/kernel/rseq.c
+index 8aa4821e3979..275d70114107 100644
+--- a/kernel/rseq.c
++++ b/kernel/rseq.c
+@@ -69,10 +69,12 @@
+ 
+ /* Required to select the proper per_cpu ops for rseq_stats_inc() */
+ #define RSEQ_BUILD_SLOW_PATH
+ 
+ #include <linux/debugfs.h>
++#include <linux/hrtimer.h>
++#include <linux/percpu.h>
+ #include <linux/prctl.h>
+ #include <linux/ratelimit.h>
+ #include <linux/rseq_entry.h>
+ #include <linux/sched.h>
+ #include <linux/syscalls.h>
+@@ -498,12 +500,95 @@ SYSCALL_DEFINE4(rseq, struct rseq __user *, rseq, u32, rseq_len, int, flags, u32
+ efault:
+ 	return -EFAULT;
+ }
+ 
+ #ifdef CONFIG_RSEQ_SLICE_EXTENSION
++struct slice_timer {
++	struct hrtimer	timer;
++	void		*cookie;
++};
++
++unsigned int rseq_slice_ext_nsecs __read_mostly = 10 * NSEC_PER_USEC;
++static DEFINE_PER_CPU(struct slice_timer, slice_timer);
+ DEFINE_STATIC_KEY_TRUE(rseq_slice_extension_key);
+ 
++/*
++ * When the timer expires and the task is still in user space, the return
++ * from interrupt will revoke the grant and schedule. If the task already
++ * entered the kernel via a syscall and the timer fires before the syscall
++ * work was able to cancel it, then depending on the preemption model this
++ * will either reschedule on return from interrupt or in the syscall work
++ * below.
++ */
++static enum hrtimer_restart rseq_slice_expired(struct hrtimer *tmr)
++{
++	struct slice_timer *st = container_of(tmr, struct slice_timer, timer);
++
++	/*
++	 * Validate that the task which armed the timer is still on the
++	 * CPU. It could have been scheduled out without canceling the
++	 * timer.
++	 */
++	if (st->cookie == current && current->rseq.slice.state.granted) {
++		rseq_stat_inc(rseq_stats.s_expired);
++		set_need_resched_current();
++	}
++	return HRTIMER_NORESTART;
++}
++
++bool __rseq_arm_slice_extension_timer(void)
++{
++	struct slice_timer *st = this_cpu_ptr(&slice_timer);
++	struct task_struct *curr = current;
++
++	lockdep_assert_irqs_disabled();
++
++	/*
++	 * This check prevents a task, which got a time slice extension
++	 * granted, from exceeding the maximum scheduling latency when the
++	 * grant expired before going out to user space. Don't bother to
++	 * clear the grant here, it will be cleaned up automatically before
++	 * going out to user space after being scheduled back in.
++	 */
++	if ((unlikely(curr->rseq.slice.expires < ktime_get_mono_fast_ns()))) {
++		set_need_resched_current();
++		return true;
++	}
++
++	/*
++	 * Store the task pointer as a cookie for comparison in the timer
++	 * function. This is safe as the timer is CPU local and cannot be
++	 * in the expiry function at this point.
++	 */
++	st->cookie = curr;
++	hrtimer_start(&st->timer, curr->rseq.slice.expires, HRTIMER_MODE_ABS_PINNED_HARD);
++	/* Arm the syscall entry work */
++	set_task_syscall_work(curr, SYSCALL_RSEQ_SLICE);
++	return false;
++}
++
++static void rseq_cancel_slice_extension_timer(void)
++{
++	struct slice_timer *st = this_cpu_ptr(&slice_timer);
++
++	/*
++	 * st->cookie can be safely read as preemption is disabled and the
++	 * timer is CPU local.
++	 *
++	 * As this is most probably the first expiring timer, the cancel is
++	 * expensive as it has to reprogram the hardware, but that's less
++	 * expensive than going through a full hrtimer_interrupt() cycle
++	 * for nothing.
++	 *
++	 * hrtimer_try_to_cancel() is sufficient here as the timer is CPU
++	 * local and once the hrtimer code disabled interrupts the timer
++	 * callback cannot be running.
++	 */
++	if (st->cookie == current)
++		hrtimer_try_to_cancel(&st->timer);
++}
++
+ static inline void rseq_slice_set_need_resched(struct task_struct *curr)
+ {
+ 	/*
+ 	 * The interrupt guard is required to prevent inconsistent state in
+ 	 * this case:
+@@ -561,15 +646,18 @@ void rseq_syscall_enter_work(long syscall)
+ 	 */
+ 	if (!ctrl.granted)
+ 		return;
+ 
+ 	/*
+-	 * Required to make set_tsk_need_resched() correct on PREEMPT[RT]
+-	 * kernels. Leaving the scope will reschedule on preemption models
+-	 * FULL, LAZY and RT if necessary.
++	 * Required to stabilize the per CPU timer pointer and to make
++	 * set_tsk_need_resched() correct on PREEMPT[RT] kernels.
++	 *
++	 * Leaving the scope will reschedule on preemption models FULL,
++	 * LAZY and RT if necessary.
+ 	 */
+ 	scoped_guard(preempt) {
++		rseq_cancel_slice_extension_timer();
+ 		/*
+ 		 * Now that preemption is disabled, quickly check whether
+ 		 * the task was already rescheduled before arriving here.
+ 		 */
+ 		if (!curr->rseq.event.sched_switch) {
+@@ -663,10 +751,35 @@ SYSCALL_DEFINE0(rseq_slice_yield)
+ 
+ 	current->rseq.slice.yielded = 0;
+ 	return yielded;
+ }
+ 
++#ifdef CONFIG_SYSCTL
++static const unsigned int rseq_slice_ext_nsecs_min = 10 * NSEC_PER_USEC;
++static const unsigned int rseq_slice_ext_nsecs_max = 50 * NSEC_PER_USEC;
++
++static const struct ctl_table rseq_slice_ext_sysctl[] = {
++	{
++		.procname	= "rseq_slice_extension_nsec",
++		.data		= &rseq_slice_ext_nsecs,
++		.maxlen		= sizeof(unsigned int),
++		.mode		= 0644,
++		.proc_handler	= proc_douintvec_minmax,
++		.extra1		= (unsigned int *)&rseq_slice_ext_nsecs_min,
++		.extra2		= (unsigned int *)&rseq_slice_ext_nsecs_max,
++	},
++};
++
++static void rseq_slice_sysctl_init(void)
++{
++	if (rseq_slice_extension_enabled())
++		register_sysctl_init("kernel", rseq_slice_ext_sysctl);
++}
++#else /* CONFIG_SYSCTL */
++static inline void rseq_slice_sysctl_init(void) { }
++#endif  /* !CONFIG_SYSCTL */
++
+ static int __init rseq_slice_cmdline(char *str)
+ {
+ 	bool on;
+ 
+ 	if (kstrtobool(str, &on))
+@@ -675,6 +788,19 @@ static int __init rseq_slice_cmdline(char *str)
+ 	if (!on)
+ 		static_branch_disable(&rseq_slice_extension_key);
+ 	return 1;
+ }
+ __setup("rseq_slice_ext=", rseq_slice_cmdline);
++
++static int __init rseq_slice_init(void)
++{
++	unsigned int cpu;
++
++	for_each_possible_cpu(cpu) {
++		hrtimer_setup(per_cpu_ptr(&slice_timer.timer, cpu), rseq_slice_expired,
++			      CLOCK_MONOTONIC, HRTIMER_MODE_REL_PINNED_HARD);
++	}
++	rseq_slice_sysctl_init();
++	return 0;
++}
++device_initcall(rseq_slice_init);
+ #endif /* CONFIG_RSEQ_SLICE_EXTENSION */
+-- 
+2.52.0
+

@@ -1,0 +1,332 @@
+From 0a11ce5ac00c071637a55e0faf54d2d398a03e08 Mon Sep 17 00:00:00 2001
+From: Amaan Qureshi <git@amaanq.com>
+Date: Fri, 13 Feb 2026 23:10:34 -0500
+Subject: [PATCH] rseq: Implement sys_rseq_slice_yield()
+
+---
+ arch/alpha/kernel/syscalls/syscall.tbl      |  1 +
+ arch/arm/tools/syscall.tbl                  |  1 +
+ arch/arm64/tools/syscall_32.tbl             |  1 +
+ arch/m68k/kernel/syscalls/syscall.tbl       |  1 +
+ arch/microblaze/kernel/syscalls/syscall.tbl |  1 +
+ arch/mips/kernel/syscalls/syscall_n32.tbl   |  1 +
+ arch/mips/kernel/syscalls/syscall_n64.tbl   |  1 +
+ arch/mips/kernel/syscalls/syscall_o32.tbl   |  1 +
+ arch/parisc/kernel/syscalls/syscall.tbl     |  1 +
+ arch/powerpc/kernel/syscalls/syscall.tbl    |  1 +
+ arch/s390/kernel/syscalls/syscall.tbl       |  1 +
+ arch/sh/kernel/syscalls/syscall.tbl         |  1 +
+ arch/sparc/kernel/syscalls/syscall.tbl      |  1 +
+ arch/x86/entry/syscalls/syscall_32.tbl      |  1 +
+ arch/x86/entry/syscalls/syscall_64.tbl      |  1 +
+ arch/xtensa/kernel/syscalls/syscall.tbl     |  1 +
+ include/linux/rseq_types.h                  |  2 ++
+ include/linux/syscalls.h                    |  1 +
+ include/uapi/asm-generic/unistd.h           |  5 ++++-
+ kernel/rseq.c                               | 21 +++++++++++++++++++++
+ kernel/sys_ni.c                             |  1 +
+ scripts/syscall.tbl                         |  1 +
+ 22 files changed, 46 insertions(+), 1 deletion(-)
+
+diff --git a/arch/alpha/kernel/syscalls/syscall.tbl b/arch/alpha/kernel/syscalls/syscall.tbl
+index 3fed97478058..f31b7afffc34 100644
+--- a/arch/alpha/kernel/syscalls/syscall.tbl
++++ b/arch/alpha/kernel/syscalls/syscall.tbl
+@@ -508,5 +508,6 @@
+ 576	common	removexattrat			sys_removexattrat
+ 577	common	open_tree_attr			sys_open_tree_attr
+ 578	common	file_getattr			sys_file_getattr
+ 579	common	file_setattr			sys_file_setattr
+ 580	common	listns				sys_listns
++581	common	rseq_slice_yield		sys_rseq_slice_yield
+diff --git a/arch/arm/tools/syscall.tbl b/arch/arm/tools/syscall.tbl
+index fd09afae72a2..94351e22bfcf 100644
+--- a/arch/arm/tools/syscall.tbl
++++ b/arch/arm/tools/syscall.tbl
+@@ -483,5 +483,6 @@
+ 466	common	removexattrat			sys_removexattrat
+ 467	common	open_tree_attr			sys_open_tree_attr
+ 468	common	file_getattr			sys_file_getattr
+ 469	common	file_setattr			sys_file_setattr
+ 470	common	listns				sys_listns
++471	common	rseq_slice_yield		sys_rseq_slice_yield
+diff --git a/arch/arm64/tools/syscall_32.tbl b/arch/arm64/tools/syscall_32.tbl
+index 8cdfe5d4dac9..62d93d88e0fe 100644
+--- a/arch/arm64/tools/syscall_32.tbl
++++ b/arch/arm64/tools/syscall_32.tbl
+@@ -480,5 +480,6 @@
+ 466	common	removexattrat			sys_removexattrat
+ 467	common	open_tree_attr			sys_open_tree_attr
+ 468	common	file_getattr			sys_file_getattr
+ 469	common	file_setattr			sys_file_setattr
+ 470	common	listns				sys_listns
++471	common	rseq_slice_yield		sys_rseq_slice_yield
+diff --git a/arch/m68k/kernel/syscalls/syscall.tbl b/arch/m68k/kernel/syscalls/syscall.tbl
+index 871a5d67bf41..248934257101 100644
+--- a/arch/m68k/kernel/syscalls/syscall.tbl
++++ b/arch/m68k/kernel/syscalls/syscall.tbl
+@@ -468,5 +468,6 @@
+ 466	common	removexattrat			sys_removexattrat
+ 467	common	open_tree_attr			sys_open_tree_attr
+ 468	common	file_getattr			sys_file_getattr
+ 469	common	file_setattr			sys_file_setattr
+ 470	common	listns				sys_listns
++471	common	rseq_slice_yield		sys_rseq_slice_yield
+diff --git a/arch/microblaze/kernel/syscalls/syscall.tbl b/arch/microblaze/kernel/syscalls/syscall.tbl
+index 022fc85d94b3..223d26303627 100644
+--- a/arch/microblaze/kernel/syscalls/syscall.tbl
++++ b/arch/microblaze/kernel/syscalls/syscall.tbl
+@@ -474,5 +474,6 @@
+ 466	common	removexattrat			sys_removexattrat
+ 467	common	open_tree_attr			sys_open_tree_attr
+ 468	common	file_getattr			sys_file_getattr
+ 469	common	file_setattr			sys_file_setattr
+ 470	common	listns				sys_listns
++471	common	rseq_slice_yield		sys_rseq_slice_yield
+diff --git a/arch/mips/kernel/syscalls/syscall_n32.tbl b/arch/mips/kernel/syscalls/syscall_n32.tbl
+index 8cedc83c3266..7430714e2b8f 100644
+--- a/arch/mips/kernel/syscalls/syscall_n32.tbl
++++ b/arch/mips/kernel/syscalls/syscall_n32.tbl
+@@ -407,5 +407,6 @@
+ 466	n32	removexattrat			sys_removexattrat
+ 467	n32	open_tree_attr			sys_open_tree_attr
+ 468	n32	file_getattr			sys_file_getattr
+ 469	n32	file_setattr			sys_file_setattr
+ 470	n32	listns				sys_listns
++471	n32	rseq_slice_yield		sys_rseq_slice_yield
+diff --git a/arch/mips/kernel/syscalls/syscall_n64.tbl b/arch/mips/kernel/syscalls/syscall_n64.tbl
+index 9b92bddf06b5..630aab9e5425 100644
+--- a/arch/mips/kernel/syscalls/syscall_n64.tbl
++++ b/arch/mips/kernel/syscalls/syscall_n64.tbl
+@@ -383,5 +383,6 @@
+ 466	n64	removexattrat			sys_removexattrat
+ 467	n64	open_tree_attr			sys_open_tree_attr
+ 468	n64	file_getattr			sys_file_getattr
+ 469	n64	file_setattr			sys_file_setattr
+ 470	n64	listns				sys_listns
++471	n64	rseq_slice_yield		sys_rseq_slice_yield
+diff --git a/arch/mips/kernel/syscalls/syscall_o32.tbl b/arch/mips/kernel/syscalls/syscall_o32.tbl
+index f810b8a55716..128653112284 100644
+--- a/arch/mips/kernel/syscalls/syscall_o32.tbl
++++ b/arch/mips/kernel/syscalls/syscall_o32.tbl
+@@ -456,5 +456,6 @@
+ 466	o32	removexattrat			sys_removexattrat
+ 467	o32	open_tree_attr			sys_open_tree_attr
+ 468	o32	file_getattr			sys_file_getattr
+ 469	o32	file_setattr			sys_file_setattr
+ 470	o32	listns				sys_listns
++471	o32	rseq_slice_yield		sys_rseq_slice_yield
+diff --git a/arch/parisc/kernel/syscalls/syscall.tbl b/arch/parisc/kernel/syscalls/syscall.tbl
+index 39bdacaa530b..f6e2d0379d57 100644
+--- a/arch/parisc/kernel/syscalls/syscall.tbl
++++ b/arch/parisc/kernel/syscalls/syscall.tbl
+@@ -467,5 +467,6 @@
+ 466	common	removexattrat			sys_removexattrat
+ 467	common	open_tree_attr			sys_open_tree_attr
+ 468	common	file_getattr			sys_file_getattr
+ 469	common	file_setattr			sys_file_setattr
+ 470	common	listns				sys_listns
++471	common	rseq_slice_yield		sys_rseq_slice_yield
+diff --git a/arch/powerpc/kernel/syscalls/syscall.tbl b/arch/powerpc/kernel/syscalls/syscall.tbl
+index ec4458cdb97b..4fcc7c58a105 100644
+--- a/arch/powerpc/kernel/syscalls/syscall.tbl
++++ b/arch/powerpc/kernel/syscalls/syscall.tbl
+@@ -559,5 +559,6 @@
+ 466	common	removexattrat			sys_removexattrat
+ 467	common	open_tree_attr			sys_open_tree_attr
+ 468	common	file_getattr			sys_file_getattr
+ 469	common	file_setattr			sys_file_setattr
+ 470	common	listns				sys_listns
++471	nospu	rseq_slice_yield		sys_rseq_slice_yield
+diff --git a/arch/s390/kernel/syscalls/syscall.tbl b/arch/s390/kernel/syscalls/syscall.tbl
+index 417ed16b3c63..09a7ef04d979 100644
+--- a/arch/s390/kernel/syscalls/syscall.tbl
++++ b/arch/s390/kernel/syscalls/syscall.tbl
+@@ -395,5 +395,6 @@
+ 466	common	removexattrat			sys_removexattrat
+ 467	common	open_tree_attr			sys_open_tree_attr
+ 468	common	file_getattr			sys_file_getattr
+ 469	common	file_setattr			sys_file_setattr
+ 470	common	listns				sys_listns
++471	common	rseq_slice_yield		sys_rseq_slice_yield
+diff --git a/arch/sh/kernel/syscalls/syscall.tbl b/arch/sh/kernel/syscalls/syscall.tbl
+index 969c11325ade..70b315cbe710 100644
+--- a/arch/sh/kernel/syscalls/syscall.tbl
++++ b/arch/sh/kernel/syscalls/syscall.tbl
+@@ -472,5 +472,6 @@
+ 466	common	removexattrat			sys_removexattrat
+ 467	common	open_tree_attr			sys_open_tree_attr
+ 468	common	file_getattr			sys_file_getattr
+ 469	common	file_setattr			sys_file_setattr
+ 470	common	listns				sys_listns
++471	common	rseq_slice_yield		sys_rseq_slice_yield
+diff --git a/arch/sparc/kernel/syscalls/syscall.tbl b/arch/sparc/kernel/syscalls/syscall.tbl
+index 39aa26b6a50b..d5b1a7198410 100644
+--- a/arch/sparc/kernel/syscalls/syscall.tbl
++++ b/arch/sparc/kernel/syscalls/syscall.tbl
+@@ -514,5 +514,6 @@
+ 466	common	removexattrat			sys_removexattrat
+ 467	common	open_tree_attr			sys_open_tree_attr
+ 468	common	file_getattr			sys_file_getattr
+ 469	common	file_setattr			sys_file_setattr
+ 470	common	listns				sys_listns
++471	common	rseq_slice_yield		sys_rseq_slice_yield
+diff --git a/arch/x86/entry/syscalls/syscall_32.tbl b/arch/x86/entry/syscalls/syscall_32.tbl
+index e979a3eac7a3..f832ebd2d79b 100644
+--- a/arch/x86/entry/syscalls/syscall_32.tbl
++++ b/arch/x86/entry/syscalls/syscall_32.tbl
+@@ -474,5 +474,6 @@
+ 466	i386	removexattrat		sys_removexattrat
+ 467	i386	open_tree_attr		sys_open_tree_attr
+ 468	i386	file_getattr		sys_file_getattr
+ 469	i386	file_setattr		sys_file_setattr
+ 470	i386	listns			sys_listns
++471	i386	rseq_slice_yield	sys_rseq_slice_yield
+diff --git a/arch/x86/entry/syscalls/syscall_64.tbl b/arch/x86/entry/syscalls/syscall_64.tbl
+index 8a4ac4841be6..524155d655da 100644
+--- a/arch/x86/entry/syscalls/syscall_64.tbl
++++ b/arch/x86/entry/syscalls/syscall_64.tbl
+@@ -393,10 +393,11 @@
+ 466	common	removexattrat		sys_removexattrat
+ 467	common	open_tree_attr		sys_open_tree_attr
+ 468	common	file_getattr		sys_file_getattr
+ 469	common	file_setattr		sys_file_setattr
+ 470	common	listns			sys_listns
++471	common	rseq_slice_yield	sys_rseq_slice_yield
+ 
+ #
+ # Due to a historical design error, certain syscalls are numbered differently
+ # in x32 as compared to native x86_64.  These syscalls have numbers 512-547.
+ # Do not add new syscalls to this range.  Numbers 548 and above are available
+diff --git a/arch/xtensa/kernel/syscalls/syscall.tbl b/arch/xtensa/kernel/syscalls/syscall.tbl
+index 438a3b170402..a9bca4e484de 100644
+--- a/arch/xtensa/kernel/syscalls/syscall.tbl
++++ b/arch/xtensa/kernel/syscalls/syscall.tbl
+@@ -439,5 +439,6 @@
+ 466	common	removexattrat			sys_removexattrat
+ 467	common	open_tree_attr			sys_open_tree_attr
+ 468	common	file_getattr			sys_file_getattr
+ 469	common	file_setattr			sys_file_setattr
+ 470	common	listns				sys_listns
++471	common	rseq_slice_yield		sys_rseq_slice_yield
+diff --git a/include/linux/rseq_types.h b/include/linux/rseq_types.h
+index 797744871f0c..72d339a2f2aa 100644
+--- a/include/linux/rseq_types.h
++++ b/include/linux/rseq_types.h
+@@ -87,13 +87,15 @@ union rseq_slice_state {
+ };
+ 
+ /**
+  * struct rseq_slice - Status information for rseq time slice extension
+  * @state:	Time slice extension state
++ * @yielded:	Indicator for rseq_slice_yield()
+  */
+ struct rseq_slice {
+ 	union rseq_slice_state	state;
++	u8			yielded;
+ };
+ 
+ /**
+  * struct rseq_data - Storage for all rseq related data
+  * @usrptr:	Pointer to the registered user space RSEQ memory
+diff --git a/include/linux/syscalls.h b/include/linux/syscalls.h
+index cf84d98964b2..6c8a570cf44a 100644
+--- a/include/linux/syscalls.h
++++ b/include/linux/syscalls.h
+@@ -959,10 +959,11 @@ asmlinkage long sys_pkey_alloc(unsigned long flags, unsigned long init_val);
+ asmlinkage long sys_pkey_free(int pkey);
+ asmlinkage long sys_statx(int dfd, const char __user *path, unsigned flags,
+ 			  unsigned mask, struct statx __user *buffer);
+ asmlinkage long sys_rseq(struct rseq __user *rseq, uint32_t rseq_len,
+ 			 int flags, uint32_t sig);
++asmlinkage long sys_rseq_slice_yield(void);
+ asmlinkage long sys_open_tree(int dfd, const char __user *path, unsigned flags);
+ asmlinkage long sys_open_tree_attr(int dfd, const char __user *path,
+ 				   unsigned flags,
+ 				   struct mount_attr __user *uattr,
+ 				   size_t usize);
+diff --git a/include/uapi/asm-generic/unistd.h b/include/uapi/asm-generic/unistd.h
+index 942370b3f5d2..a627acc8fb5f 100644
+--- a/include/uapi/asm-generic/unistd.h
++++ b/include/uapi/asm-generic/unistd.h
+@@ -858,12 +858,15 @@ __SYSCALL(__NR_file_getattr, sys_file_getattr)
+ #define __NR_file_setattr 469
+ __SYSCALL(__NR_file_setattr, sys_file_setattr)
+ #define __NR_listns 470
+ __SYSCALL(__NR_listns, sys_listns)
+ 
++#define __NR_rseq_slice_yield 471
++__SYSCALL(__NR_rseq_slice_yield, sys_rseq_slice_yield)
++
+ #undef __NR_syscalls
+-#define __NR_syscalls 471
++#define __NR_syscalls 472
+ 
+ /*
+  * 32 bit systems traditionally used different
+  * syscalls for off_t and loff_t arguments, while
+  * 64 bit systems only need the off_t version.
+diff --git a/kernel/rseq.c b/kernel/rseq.c
+index 09848bb14ec2..d8e1992edffa 100644
+--- a/kernel/rseq.c
++++ b/kernel/rseq.c
+@@ -551,10 +551,31 @@ int rseq_slice_extension_prctl(unsigned long arg2, unsigned long arg3)
+ die:
+ 	force_sig(SIGSEGV);
+ 	return -EFAULT;
+ }
+ 
++/**
++ * sys_rseq_slice_yield - yield the current processor side effect free if a
++ *			  task granted with a time slice extension is done with
++ *			  the critical work before being forced out.
++ *
++ * Return: 1 if the task successfully yielded the CPU within the granted slice.
++ *         0 if the slice extension was either never granted or was revoked by
++ *	     going over the granted extension, using a syscall other than this one
++ *	     or being scheduled out earlier due to a subsequent interrupt.
++ *
++ * The syscall does not schedule because the syscall entry work immediately
++ * relinquishes the CPU and schedules if required.
++ */
++SYSCALL_DEFINE0(rseq_slice_yield)
++{
++	int yielded = !!current->rseq.slice.yielded;
++
++	current->rseq.slice.yielded = 0;
++	return yielded;
++}
++
+ static int __init rseq_slice_cmdline(char *str)
+ {
+ 	bool on;
+ 
+ 	if (kstrtobool(str, &on))
+diff --git a/kernel/sys_ni.c b/kernel/sys_ni.c
+index bf5d05c635ff..add3032da16f 100644
+--- a/kernel/sys_ni.c
++++ b/kernel/sys_ni.c
+@@ -388,8 +388,9 @@ COND_SYSCALL(setresuid16);
+ COND_SYSCALL(setreuid16);
+ COND_SYSCALL(setuid16);
+ 
+ /* restartable sequence */
+ COND_SYSCALL(rseq);
++COND_SYSCALL(rseq_slice_yield);
+ 
+ COND_SYSCALL(uretprobe);
+ COND_SYSCALL(uprobe);
+diff --git a/scripts/syscall.tbl b/scripts/syscall.tbl
+index e74868be513c..7a42b32b6577 100644
+--- a/scripts/syscall.tbl
++++ b/scripts/syscall.tbl
+@@ -409,5 +409,6 @@
+ 466	common	removexattrat			sys_removexattrat
+ 467	common	open_tree_attr			sys_open_tree_attr
+ 468	common	file_getattr			sys_file_getattr
+ 469	common	file_setattr			sys_file_setattr
+ 470	common	listns				sys_listns
++471	common	rseq_slice_yield		sys_rseq_slice_yield
+-- 
+2.52.0
+

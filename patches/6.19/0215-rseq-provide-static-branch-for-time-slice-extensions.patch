@@ -1,0 +1,87 @@
+From e45fa9159e5b6d57cd61c6573d2952c7e83e3894 Mon Sep 17 00:00:00 2001
+From: Amaan Qureshi <git@amaanq.com>
+Date: Fri, 13 Feb 2026 23:10:29 -0500
+Subject: [PATCH] rseq: Provide static branch for time slice extensions
+
+---
+ Documentation/admin-guide/kernel-parameters.txt |  5 +++++
+ include/linux/rseq_entry.h                      | 11 +++++++++++
+ kernel/rseq.c                                   | 17 +++++++++++++++++
+ 3 files changed, 33 insertions(+)
+
+diff --git a/Documentation/admin-guide/kernel-parameters.txt b/Documentation/admin-guide/kernel-parameters.txt
+index aa0031108bc1..3ece8acfe62e 100644
+--- a/Documentation/admin-guide/kernel-parameters.txt
++++ b/Documentation/admin-guide/kernel-parameters.txt
+@@ -6638,10 +6638,15 @@ Kernel parameters
+ 	rootdelay=	[KNL] Delay (in seconds) to pause before attempting to
+ 			mount the root filesystem
+ 
+ 	rootflags=	[KNL] Set root filesystem mount option string
+ 
++	rseq_slice_ext= [KNL] RSEQ based time slice extension
++			Format: boolean
++			Control enablement of RSEQ based time slice extension.
++			Default is 'on'.
++
+ 	initramfs_options= [KNL]
+                         Specify mount options for for the initramfs mount.
+ 
+ 	rootfstype=	[KNL] Set root filesystem type
+ 
+diff --git a/include/linux/rseq_entry.h b/include/linux/rseq_entry.h
+index a36b472627de..d0ec4714ffd6 100644
+--- a/include/linux/rseq_entry.h
++++ b/include/linux/rseq_entry.h
+@@ -73,10 +73,21 @@ DECLARE_STATIC_KEY_MAYBE(CONFIG_RSEQ_DEBUG_DEFAULT_ENABLE, rseq_debug_enabled);
+ #define rseq_inline
+ #else
+ #define rseq_inline __always_inline
+ #endif
+ 
++#ifdef CONFIG_RSEQ_SLICE_EXTENSION
++DECLARE_STATIC_KEY_TRUE(rseq_slice_extension_key);
++
++static __always_inline bool rseq_slice_extension_enabled(void)
++{
++	return static_branch_likely(&rseq_slice_extension_key);
++}
++#else /* CONFIG_RSEQ_SLICE_EXTENSION */
++static inline bool rseq_slice_extension_enabled(void) { return false; }
++#endif /* !CONFIG_RSEQ_SLICE_EXTENSION */
++
+ bool rseq_debug_update_user_cs(struct task_struct *t, struct pt_regs *regs, unsigned long csaddr);
+ bool rseq_debug_validate_ids(struct task_struct *t);
+ 
+ static __always_inline void rseq_note_user_irq_entry(void)
+ {
+diff --git a/kernel/rseq.c b/kernel/rseq.c
+index 07c324d5a201..bf75268580ef 100644
+--- a/kernel/rseq.c
++++ b/kernel/rseq.c
+@@ -481,5 +481,22 @@ SYSCALL_DEFINE4(rseq, struct rseq __user *, rseq, u32, rseq_len, int, flags, u32
+ 	return 0;
+ 
+ efault:
+ 	return -EFAULT;
+ }
++
++#ifdef CONFIG_RSEQ_SLICE_EXTENSION
++DEFINE_STATIC_KEY_TRUE(rseq_slice_extension_key);
++
++static int __init rseq_slice_cmdline(char *str)
++{
++	bool on;
++
++	if (kstrtobool(str, &on))
++		return 0;
++
++	if (!on)
++		static_branch_disable(&rseq_slice_extension_key);
++	return 1;
++}
++__setup("rseq_slice_ext=", rseq_slice_cmdline);
++#endif /* CONFIG_RSEQ_SLICE_EXTENSION */
+-- 
+2.52.0
+

@@ -1,0 +1,166 @@
+From c9953bcfe38c746567625d1395a0be6e86a60f2f Mon Sep 17 00:00:00 2001
+From: Amaan Qureshi <git@amaanq.com>
+Date: Fri, 13 Feb 2026 23:10:32 -0500
+Subject: [PATCH] rseq: Add prctl() to enable time slice extensions
+
+---
+ include/linux/rseq.h       |  9 +++++++
+ include/uapi/linux/prctl.h | 10 ++++++++
+ kernel/rseq.c              | 52 ++++++++++++++++++++++++++++++++++++++
+ kernel/sys.c               |  6 +++++
+ 4 files changed, 77 insertions(+)
+
+diff --git a/include/linux/rseq.h b/include/linux/rseq.h
+index 2266f4dc77b6..3c194a02ad0a 100644
+--- a/include/linux/rseq.h
++++ b/include/linux/rseq.h
+@@ -161,6 +161,15 @@ static inline void rseq_execve(struct task_struct *t) { }
+ void rseq_syscall(struct pt_regs *regs);
+ #else /* CONFIG_DEBUG_RSEQ */
+ static inline void rseq_syscall(struct pt_regs *regs) { }
+ #endif /* !CONFIG_DEBUG_RSEQ */
+ 
++#ifdef CONFIG_RSEQ_SLICE_EXTENSION
++int rseq_slice_extension_prctl(unsigned long arg2, unsigned long arg3);
++#else /* CONFIG_RSEQ_SLICE_EXTENSION */
++static inline int rseq_slice_extension_prctl(unsigned long arg2, unsigned long arg3)
++{
++	return -ENOTSUPP;
++}
++#endif /* !CONFIG_RSEQ_SLICE_EXTENSION */
++
+ #endif /* _LINUX_RSEQ_H */
+diff --git a/include/uapi/linux/prctl.h b/include/uapi/linux/prctl.h
+index 51c4e8c82b1e..79944b7ae50a 100644
+--- a/include/uapi/linux/prctl.h
++++ b/include/uapi/linux/prctl.h
+@@ -384,6 +384,16 @@ struct prctl_mm_map {
+ /* FUTEX hash management */
+ #define PR_FUTEX_HASH			78
+ # define PR_FUTEX_HASH_SET_SLOTS	1
+ # define PR_FUTEX_HASH_GET_SLOTS	2
+ 
++/* RSEQ time slice extensions */
++#define PR_RSEQ_SLICE_EXTENSION			79
++# define PR_RSEQ_SLICE_EXTENSION_GET		1
++# define PR_RSEQ_SLICE_EXTENSION_SET		2
++/*
++ * Bits for RSEQ_SLICE_EXTENSION_GET/SET
++ * PR_RSEQ_SLICE_EXT_ENABLE:	Enable
++ */
++# define PR_RSEQ_SLICE_EXT_ENABLE		0x01
++
+ #endif /* _LINUX_PRCTL_H */
+diff --git a/kernel/rseq.c b/kernel/rseq.c
+index 415d75b6df2c..09848bb14ec2 100644
+--- a/kernel/rseq.c
++++ b/kernel/rseq.c
+@@ -69,10 +69,11 @@
+ 
+ /* Required to select the proper per_cpu ops for rseq_stats_inc() */
+ #define RSEQ_BUILD_SLOW_PATH
+ 
+ #include <linux/debugfs.h>
++#include <linux/prctl.h>
+ #include <linux/ratelimit.h>
+ #include <linux/rseq_entry.h>
+ #include <linux/sched.h>
+ #include <linux/syscalls.h>
+ #include <linux/uaccess.h>
+@@ -499,10 +500,61 @@ SYSCALL_DEFINE4(rseq, struct rseq __user *, rseq, u32, rseq_len, int, flags, u32
+ }
+ 
+ #ifdef CONFIG_RSEQ_SLICE_EXTENSION
+ DEFINE_STATIC_KEY_TRUE(rseq_slice_extension_key);
+ 
++int rseq_slice_extension_prctl(unsigned long arg2, unsigned long arg3)
++{
++	switch (arg2) {
++	case PR_RSEQ_SLICE_EXTENSION_GET:
++		if (arg3)
++			return -EINVAL;
++		return current->rseq.slice.state.enabled ? PR_RSEQ_SLICE_EXT_ENABLE : 0;
++
++	case PR_RSEQ_SLICE_EXTENSION_SET: {
++		u32 rflags, valid = RSEQ_CS_FLAG_SLICE_EXT_AVAILABLE;
++		bool enable = !!(arg3 & PR_RSEQ_SLICE_EXT_ENABLE);
++
++		if (arg3 & ~PR_RSEQ_SLICE_EXT_ENABLE)
++			return -EINVAL;
++		if (!rseq_slice_extension_enabled())
++			return -ENOTSUPP;
++		if (!current->rseq.usrptr)
++			return -ENXIO;
++
++		/* No change? */
++		if (enable == !!current->rseq.slice.state.enabled)
++			return 0;
++
++		if (get_user(rflags, &current->rseq.usrptr->flags))
++			goto die;
++
++		if (current->rseq.slice.state.enabled)
++			valid |= RSEQ_CS_FLAG_SLICE_EXT_ENABLED;
++
++		if ((rflags & valid) != valid)
++			goto die;
++
++		rflags &= ~RSEQ_CS_FLAG_SLICE_EXT_ENABLED;
++		rflags |= RSEQ_CS_FLAG_SLICE_EXT_AVAILABLE;
++		if (enable)
++			rflags |= RSEQ_CS_FLAG_SLICE_EXT_ENABLED;
++
++		if (put_user(rflags, &current->rseq.usrptr->flags))
++			goto die;
++
++		current->rseq.slice.state.enabled = enable;
++		return 0;
++	}
++	default:
++		return -EINVAL;
++	}
++die:
++	force_sig(SIGSEGV);
++	return -EFAULT;
++}
++
+ static int __init rseq_slice_cmdline(char *str)
+ {
+ 	bool on;
+ 
+ 	if (kstrtobool(str, &on))
+diff --git a/kernel/sys.c b/kernel/sys.c
+index 8b58eece4e58..af71987df81c 100644
+--- a/kernel/sys.c
++++ b/kernel/sys.c
+@@ -51,10 +51,11 @@
+ #include <linux/kprobes.h>
+ #include <linux/user_namespace.h>
+ #include <linux/time_namespace.h>
+ #include <linux/binfmts.h>
+ #include <linux/futex.h>
++#include <linux/rseq.h>
+ 
+ #include <linux/sched.h>
+ #include <linux/sched/autogroup.h>
+ #include <linux/sched/loadavg.h>
+ #include <linux/sched/stat.h>
+@@ -2866,10 +2867,15 @@ SYSCALL_DEFINE5(prctl, int, option, unsigned long, arg2, unsigned long, arg3,
+ 		error = posixtimer_create_prctl(arg2);
+ 		break;
+ 	case PR_FUTEX_HASH:
+ 		error = futex_hash_prctl(arg2, arg3, arg4);
+ 		break;
++	case PR_RSEQ_SLICE_EXTENSION:
++		if (arg4 || arg5)
++			return -EINVAL;
++		error = rseq_slice_extension_prctl(arg2, arg3);
++		break;
+ 	default:
+ 		trace_task_prctl_unknown(option, arg2, arg3, arg4, arg5);
+ 		error = -EINVAL;
+ 		break;
+ 	}
+-- 
+2.52.0
+

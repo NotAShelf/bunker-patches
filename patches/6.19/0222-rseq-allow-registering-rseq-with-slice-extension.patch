@@ -1,0 +1,81 @@
+From b7a7035beddc71b3d95dc89dfbe8d19fded4e2cb Mon Sep 17 00:00:00 2001
+From: Amaan Qureshi <git@amaanq.com>
+Date: Fri, 13 Feb 2026 23:10:42 -0500
+Subject: [PATCH] rseq: Allow registering RSEQ with slice extension
+
+---
+ include/uapi/linux/rseq.h |  3 ++-
+ kernel/rseq.c             | 12 ++++++++++--
+ 2 files changed, 12 insertions(+), 3 deletions(-)
+
+diff --git a/include/uapi/linux/rseq.h b/include/uapi/linux/rseq.h
+index 6afc219d1545..863c4a00a66b 100644
+--- a/include/uapi/linux/rseq.h
++++ b/include/uapi/linux/rseq.h
+@@ -17,11 +17,12 @@ enum rseq_cpu_id_state {
+ 	RSEQ_CPU_ID_UNINITIALIZED		= -1,
+ 	RSEQ_CPU_ID_REGISTRATION_FAILED		= -2,
+ };
+ 
+ enum rseq_flags {
+-	RSEQ_FLAG_UNREGISTER = (1 << 0),
++	RSEQ_FLAG_UNREGISTER			= (1 << 0),
++	RSEQ_FLAG_SLICE_EXT_DEFAULT_ON		= (1 << 1),
+ };
+ 
+ enum rseq_cs_flags_bit {
+ 	/* Historical and unsupported bits */
+ 	RSEQ_CS_FLAG_NO_RESTART_ON_PREEMPT_BIT	= 0,
+diff --git a/kernel/rseq.c b/kernel/rseq.c
+index 275d70114107..1c5490a172a8 100644
+--- a/kernel/rseq.c
++++ b/kernel/rseq.c
+@@ -422,11 +422,11 @@ SYSCALL_DEFINE4(rseq, struct rseq __user *, rseq, u32, rseq_len, int, flags, u32
+ 			return -EFAULT;
+ 		rseq_reset(current);
+ 		return 0;
+ 	}
+ 
+-	if (unlikely(flags))
++	if (unlikely(flags & ~(RSEQ_FLAG_SLICE_EXT_DEFAULT_ON)))
+ 		return -EINVAL;
+ 
+ 	if (current->rseq.usrptr) {
+ 		/*
+ 		 * If rseq is already registered, check whether
+@@ -457,12 +457,16 @@ SYSCALL_DEFINE4(rseq, struct rseq __user *, rseq, u32, rseq_len, int, flags, u32
+ 					    rseq_len < offsetof(struct rseq, end))))
+ 		return -EINVAL;
+ 	if (!access_ok(rseq, rseq_len))
+ 		return -EFAULT;
+ 
+-	if (IS_ENABLED(CONFIG_RSEQ_SLICE_EXTENSION))
++	if (IS_ENABLED(CONFIG_RSEQ_SLICE_EXTENSION)) {
+ 		rseqfl |= RSEQ_CS_FLAG_SLICE_EXT_AVAILABLE;
++		if (rseq_slice_extension_enabled() &&
++		    (flags & RSEQ_FLAG_SLICE_EXT_DEFAULT_ON))
++			rseqfl |= RSEQ_CS_FLAG_SLICE_EXT_ENABLED;
++	}
+ 
+ 	scoped_user_write_access(rseq, efault) {
+ 		/*
+ 		 * If the rseq_cs pointer is non-NULL on registration, clear it to
+ 		 * avoid a potential segfault on return to user-space. The proper thing
+@@ -486,10 +490,14 @@ SYSCALL_DEFINE4(rseq, struct rseq __user *, rseq, u32, rseq_len, int, flags, u32
+ 	 */
+ 	current->rseq.usrptr = rseq;
+ 	current->rseq.len = rseq_len;
+ 	current->rseq.sig = sig;
+ 
++#ifdef CONFIG_RSEQ_SLICE_EXTENSION
++	current->rseq.slice.state.enabled = !!(rseqfl & RSEQ_CS_FLAG_SLICE_EXT_ENABLED);
++#endif
++
+ 	/*
+ 	 * If rseq was previously inactive, and has just been
+ 	 * registered, ensure the cpu_id_start and cpu_id fields
+ 	 * are updated before returning to user-space.
+ 	 */
+-- 
+2.52.0
+

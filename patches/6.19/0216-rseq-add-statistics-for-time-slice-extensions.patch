@@ -1,0 +1,72 @@
+From 7b6d62bbbef3b80bb686a6c9fd65880f9d2657fb Mon Sep 17 00:00:00 2001
+From: Amaan Qureshi <git@amaanq.com>
+Date: Fri, 13 Feb 2026 23:10:30 -0500
+Subject: [PATCH] rseq: Add statistics for time slice extensions
+
+---
+ include/linux/rseq_entry.h |  5 +++++
+ kernel/rseq.c              | 14 ++++++++++++++
+ 2 files changed, 19 insertions(+)
+
+diff --git a/include/linux/rseq_entry.h b/include/linux/rseq_entry.h
+index d0ec4714ffd6..54d8e338b26e 100644
+--- a/include/linux/rseq_entry.h
++++ b/include/linux/rseq_entry.h
+@@ -13,10 +13,15 @@ struct rseq_stats {
+ 	unsigned long	fastpath;
+ 	unsigned long	ids;
+ 	unsigned long	cs;
+ 	unsigned long	clear;
+ 	unsigned long	fixup;
++	unsigned long	s_granted;
++	unsigned long	s_expired;
++	unsigned long	s_revoked;
++	unsigned long	s_yielded;
++	unsigned long	s_aborted;
+ };
+ 
+ DECLARE_PER_CPU(struct rseq_stats, rseq_stats);
+ 
+ /*
+diff --git a/kernel/rseq.c b/kernel/rseq.c
+index bf75268580ef..415d75b6df2c 100644
+--- a/kernel/rseq.c
++++ b/kernel/rseq.c
+@@ -136,20 +136,34 @@ static int rseq_stats_show(struct seq_file *m, void *p)
+ 		stats.fastpath	+= data_race(per_cpu(rseq_stats.fastpath, cpu));
+ 		stats.ids	+= data_race(per_cpu(rseq_stats.ids, cpu));
+ 		stats.cs	+= data_race(per_cpu(rseq_stats.cs, cpu));
+ 		stats.clear	+= data_race(per_cpu(rseq_stats.clear, cpu));
+ 		stats.fixup	+= data_race(per_cpu(rseq_stats.fixup, cpu));
++		if (IS_ENABLED(CONFIG_RSEQ_SLICE_EXTENSION)) {
++			stats.s_granted	+= data_race(per_cpu(rseq_stats.s_granted, cpu));
++			stats.s_expired	+= data_race(per_cpu(rseq_stats.s_expired, cpu));
++			stats.s_revoked	+= data_race(per_cpu(rseq_stats.s_revoked, cpu));
++			stats.s_yielded	+= data_race(per_cpu(rseq_stats.s_yielded, cpu));
++			stats.s_aborted	+= data_race(per_cpu(rseq_stats.s_aborted, cpu));
++		}
+ 	}
+ 
+ 	seq_printf(m, "exit:   %16lu\n", stats.exit);
+ 	seq_printf(m, "signal: %16lu\n", stats.signal);
+ 	seq_printf(m, "slowp:  %16lu\n", stats.slowpath);
+ 	seq_printf(m, "fastp:  %16lu\n", stats.fastpath);
+ 	seq_printf(m, "ids:    %16lu\n", stats.ids);
+ 	seq_printf(m, "cs:     %16lu\n", stats.cs);
+ 	seq_printf(m, "clear:  %16lu\n", stats.clear);
+ 	seq_printf(m, "fixup:  %16lu\n", stats.fixup);
++	if (IS_ENABLED(CONFIG_RSEQ_SLICE_EXTENSION)) {
++		seq_printf(m, "sgrant: %16lu\n", stats.s_granted);
++		seq_printf(m, "sexpir: %16lu\n", stats.s_expired);
++		seq_printf(m, "srevok: %16lu\n", stats.s_revoked);
++		seq_printf(m, "syield: %16lu\n", stats.s_yielded);
++		seq_printf(m, "sabort: %16lu\n", stats.s_aborted);
++	}
+ 	return 0;
+ }
+ 
+ static int rseq_stats_open(struct inode *inode, struct file *file)
+ {
+-- 
+2.52.0
+
