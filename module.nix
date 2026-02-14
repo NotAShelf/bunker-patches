@@ -327,9 +327,9 @@ let
     NFC = mkForce (option no); # Near Field Communication
     WIMAX = mkForce (option no); # WiMAX (dead standard)
     MCTP = mkForce (option no); # Management Component Transport
-    # QRTR: can't disable — ath11k/ath12k WiFi drivers `select QRTR`
     HSR = mkForce (option no); # High-availability Seamless Redundancy
-    # MPLS: can't disable — OPENVSWITCH (common-config.nix) selects it
+    OPENVSWITCH = mkForce (option no); # Open vSwitch (selects MPLS)
+    MPLS = mkForce (option no);
     BATMAN_ADV = mkForce (option no); # B.A.T.M.A.N. mesh
     NET_DSA = mkForce (option no); # Distributed Switch Architecture
 
@@ -371,7 +371,6 @@ let
     UDF_FS = mkForce (option no);
     VXFS_FS = mkForce (option no); # freevxfs
     ZONEFS_FS = mkForce (option no);
-    "9P_FS" = mkForce (option no); # Plan 9
     CODA_FS = mkForce (option no); # Coda distributed filesystem
     ROMFS_FS = mkForce (option no); # ROM filesystem (embedded)
     UBIFS_FS = mkForce (option no); # UBI flash filesystem (embedded)
@@ -400,7 +399,9 @@ let
     SPMI = mkForce (option no); # Qualcomm ARM power management bus
     SLIMBUS = mkForce (option no); # Qualcomm ARM audio codec bus
     INTERCONNECT = mkForce (option no); # ARM SoC interconnect framework
-    # W1: can't disable — BATTERY_DS2780/DS2781 (common-config.nix) select it
+    BATTERY_DS2780 = mkForce (option no); # niche battery chip (selects W1)
+    BATTERY_DS2781 = mkForce (option no); # niche battery chip (selects W1)
+    W1 = mkForce (option no); # 1-Wire bus
     NTB = mkForce (option no); # Non-Transparent Bridge (multi-host PCIe)
     COUNTER = mkForce (option no); # Embedded quadrature encoders
     GNSS = mkForce (option no); # GPS/GNSS receivers over serial
@@ -412,7 +413,9 @@ let
     MTD = mkForce (option no); # Memory Technology Devices (raw flash, embedded)
 
     # --- Dead memory technologies ---
-    # LIBNVDIMM: can't disable — arch/x86/Kconfig unconditionally `select LIBNVDIMM`
+    X86_PMEM_LEGACY = mkForce (option no); # non-standard NVDIMMs (selects LIBNVDIMM)
+    ACPI_NFIT = mkForce (option no); # NVDIMM firmware table (selects LIBNVDIMM)
+    LIBNVDIMM = mkForce (option no); # persistent memory
     DEV_DAX = mkForce (option no); # DAX devices for persistent memory
     CXL_BUS = mkForce (option no); # Compute Express Link (bleeding-edge server)
 
@@ -429,7 +432,8 @@ let
     AUXDISPLAY = mkForce (option no); # Character LCD displays (parallel port)
     ACRN_GUEST = mkForce (option no); # ACRN hypervisor guest (dead hypervisor)
     RAW_DRIVER = mkForce (option no); # /dev/raw (deprecated, use O_DIRECT)
-    # DCA: can't disable — INTEL_IOATDMA (common-config.nix) selects it
+    INTEL_IOATDMA = mkForce (option no); # old Xeon DMA engine (selects DCA)
+    DCA = mkForce (option no); # Direct Cache Access
     HANGCHECK_TIMER = mkForce (option no); # Server cluster heartbeat
     DEVPORT = mkForce (option no); # /dev/port I/O port access
     HOTPLUG_PCI_CPCI = mkForce (option no); # CompactPCI hotplug (industrial)
@@ -437,9 +441,32 @@ let
     MOUSE_SERIAL = mkForce (option no); # Serial mice (RS-232)
     SERIO_SERPORT = mkForce (option no); # Serial port input devices
     SND_ISA = mkForce (option no); # ISA sound cards
-    # SND_OPL3_LIB: can't disable — PCI sound cards (FM801, etc.) select it
-    SND_OPL4_LIB = mkForce (option no); # OPL4 synth (ISA-era)
-    # SND_MPU401_UART: can't disable — PCI sound cards (FM801, YMFPCI, etc.) select it
+    # Legacy PCI sound cards (select SND_OPL3_LIB / SND_MPU401_UART)
+    SND_ALS300 = mkForce (option no);
+    SND_ALS4000 = mkForce (option no);
+    SND_ALI5451 = mkForce (option no);
+    SND_AU8810 = mkForce (option no);
+    SND_AU8820 = mkForce (option no);
+    SND_AU8830 = mkForce (option no);
+    SND_AZT3328 = mkForce (option no);
+    SND_CMIPCI = mkForce (option no);
+    SND_OXYGEN = mkForce (option no);
+    SND_CS4281 = mkForce (option no);
+    SND_ES1938 = mkForce (option no);
+    SND_ES1968 = mkForce (option no);
+    SND_FM801 = mkForce (option no);
+    SND_ICE1712 = mkForce (option no);
+    SND_RIPTIDE = mkForce (option no);
+    SND_SE6X = mkForce (option no);
+    SND_SONICVIBES = mkForce (option no);
+    SND_TRIDENT = mkForce (option no);
+    SND_VIA82XX = mkForce (option no);
+    SND_VIRTUOSO = mkForce (option no);
+    SND_YMFPCI = mkForce (option no);
+    SND_MPU401 = mkForce (option no); # standalone MPU-401 driver
+    SND_OPL3_LIB = mkForce (option no);
+    SND_OPL4_LIB = mkForce (option no);
+    SND_MPU401_UART = mkForce (option no);
     SND_SB_COMMON = mkForce (option no); # SoundBlaster common (ISA-era)
     SND_OSSEMUL = mkForce (option no); # OSS API emulation (deprecated ~20yr)
     SND_PCM_OSS = mkForce (option no); # OSS /dev/dsp emulation
@@ -488,7 +515,9 @@ let
     # --- Dead misc drivers ---
     APPLICOM = mkForce (option no); # Industrial fieldbus cards
     PHANTOM = mkForce (option no); # SensAble PHANToM haptic device
-    # TIFM_CORE: can't disable — MMC_TIFM_SD (common-config.nix) selects it
+    MMC_TIFM_SD = mkForce (option no); # TI flash media SD (selects TIFM_CORE)
+    MEMSTICK_TIFM_MS = mkForce (option no); # TI flash media MemoryStick (selects TIFM_CORE)
+    TIFM_CORE = mkForce (option no);
     TELCLOCK = mkForce (option no); # Telecom clock (MCPL0010)
     ECHO = mkForce (option no); # Telephony echo cancellation
     RPMSG = mkForce (option no); # Remote Processor Messaging (ARM)
@@ -504,7 +533,6 @@ let
     SLIP = mkForce (option no); # Serial Line IP (dialup)
     ATA_OVER_ETH = mkForce (option no); # ATA over Ethernet
     LAPB = mkForce (option no); # X.25 link layer
-    NET_9P = mkForce (option no); # Plan 9 network transport
     PKTGEN = mkForce (option no); # Kernel packet generator (testing)
     N_GSM = mkForce (option no); # GSM 0710 mux for old serial modems
     BT_CMTP = mkForce (option no); # Bluetooth CAPI (ISDN over BT)
@@ -517,7 +545,6 @@ let
     NVME_TARGET = mkForce (option no); # NVMe-oF target
 
     # --- Unused large subsystems ---
-    # AUDIT: can't disable — AppArmor (NixOS default LSM) selects it
     IP_VS = mkForce (option no); # IPVS load balancer (~30k LOC, only k8s IPVS mode)
     NFSD = mkForce (option no); # NFS server (~25k LOC, client kept via NFS_FS)
     QUOTA = mkForce (option no); # Disk quotas (~10k LOC, multi-user server feature)
@@ -541,7 +568,6 @@ let
     REROUTE_FOR_BROKEN_BOOT_IRQS = mkForce (option no); # Workaround for ancient BIOS IRQ routing
     MSDOS_PARTITION = mkForce (option no); # MBR partition table (GPT era)
     ACCESSIBILITY = mkForce (option no); # Speakup screen reader
-    SCSI_LOWLEVEL = mkForce (option no); # Legacy SCSI HBA drivers (Adaptec, BusLogic, etc.)
     X86_SGX = mkForce (option no); # Intel SGX enclaves
     SECURITY_SELINUX = mkForce (option no); # SELinux (~20k LOC, NixOS uses AppArmor)
     SECURITY_TOMOYO = mkForce (option no); # TOMOYO (~10k LOC, unused on NixOS)
