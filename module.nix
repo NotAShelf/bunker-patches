@@ -309,11 +309,8 @@ let
     NET_DSA = option no; # Distributed Switch Architecture
 
     # --- Server/cloud networking ---
-    OPENVSWITCH = option no; # Virtual switch (SDN)
-    VXLAN = option no; # Cloud overlay
     GENEVE = option no; # Cloud overlay
     NET_TEAM = option no; # Network teaming
-    BONDING = option no; # NIC bonding
     MACSEC = option no; # 802.1AE MAC encryption
     NET_SWITCHDEV = option no; # Switch offload
 
@@ -336,7 +333,6 @@ let
     JFFS2_FS = option no;
     JFS_FS = option no;
     MINIX_FS = option no;
-    NFS_FS = mkForce (option no); # NixOS enables by default
     NILFS2_FS = option no;
     OCFS2_FS = option no;
     OMFS_FS = option no;
@@ -363,6 +359,34 @@ let
     GREYBUS = option no; # Project Ara
     STAGING = option no; # Experimental drivers
 
+    # --- Dead buses/subsystems (industrial/embedded/ARM) ---
+    VME_BUS = option no; # VMEbus (1980s industrial crate bus)
+    RAPIDIO = option no; # Telecom/DSP interconnect
+    IPACK = option no; # IndustryPack automation
+    SIOX = option no; # Eckelmann industrial protocol
+    HSI = option no; # Nokia modem serial (one dead chipset)
+    MOST = option no; # Automotive infotainment bus
+    SPMI = option no; # Qualcomm ARM power management bus
+    SLIMBUS = option no; # Qualcomm ARM audio codec bus
+    INTERCONNECT = option no; # ARM SoC interconnect framework
+    W1 = option no; # 1-Wire bus (embedded sensors)
+    NTB = option no; # Non-Transparent Bridge (multi-host PCIe)
+    COUNTER = option no; # Embedded quadrature encoders
+    GNSS = option no; # GPS/GNSS receivers over serial
+    MELLANOX_PLATFORM = option no; # Mellanox switch ASICs (not ConnectX NICs)
+    PCCARD = option no; # 16-bit PC Card (dead since ~2005)
+
+    # --- Dead media ---
+    MEDIA_ANALOG_TV_SUPPORT = option no; # Analog TV (shut off globally)
+    MEDIA_SDR_SUPPORT = option no; # Software defined radio
+
+    # --- Dead network transports ---
+    SLIP = option no; # Serial Line IP (dialup)
+    ATA_OVER_ETH = option no; # ATA over Ethernet
+    LAPB = option no; # X.25 link layer
+    NET_9P = option no; # Plan 9 network transport
+    PKTGEN = option no; # Kernel packet generator (testing)
+
     # --- Server block/storage ---
     BLK_DEV_NBD = option no; # Network block device
     BLK_DEV_RBD = option no; # Ceph/RADOS block
@@ -375,6 +399,12 @@ let
     SYSFS_SYSCALL = option no; # old sysfs() syscall
     PCSPKR_PLATFORM = option no; # PC speaker
     KEXEC = option no; # kexec (disabled at runtime anyway)
+    CDROM_PKTCDVD = option no; # Packet writing to CD/DVDs
+
+    # --- Debug/testing infrastructure ---
+    KCOV = option no; # Syzkaller fuzzing infra
+    GCOV_KERNEL = option no; # Kernel code coverage
+    FAULT_INJECTION = option no; # Debug fault injection framework
 
     # --- VM guest (not applicable to bare-metal desktop) ---
     DRM_VIRTIO_GPU = option no; # Virtio GPU
