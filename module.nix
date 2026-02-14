@@ -401,6 +401,8 @@ let
     DRM_SIS = option no; # SiS GPUs (dead vendor ~2008)
     DRM_VIA = option no; # VIA GPUs (dead GPU division)
     DRM_SAVAGE = option no; # S3 Savage GPUs (dead ~2003)
+    DRM_NOUVEAU = mkForce (option no); # NVIDIA open-source (use proprietary or AMD)
+    DRM_RADEON = option no; # Pre-GCN AMD GPUs (pre-2012, use AMDGPU)
 
     # --- Dead misc hardware ---
     MEMSTICK = option no; # Sony Memory Stick (dead format)
@@ -475,6 +477,8 @@ let
 
     # --- Dead media ---
     MEDIA_ANALOG_TV_SUPPORT = option no; # Analog TV (shut off globally)
+    MEDIA_DIGITAL_TV_SUPPORT = option no; # DVB digital TV tuners
+    DVB_CORE = option no; # Digital Video Broadcasting
     MEDIA_SDR_SUPPORT = option no; # Software defined radio
 
     # --- Dead network transports ---
@@ -514,6 +518,8 @@ let
     ACCESSIBILITY = option no; # Speakup screen reader
     SCSI_LOWLEVEL = option no; # Legacy SCSI HBA drivers (Adaptec, BusLogic, etc.)
     X86_SGX = option no; # Intel SGX enclaves
+    SECURITY_SELINUX = mkForce (option no); # SELinux (~20k LOC, NixOS uses AppArmor)
+    SECURITY_TOMOYO = mkForce (option no); # TOMOYO (~10k LOC, unused on NixOS)
 
     # --- Obsolete crypto ---
     CRYPTO_USER_API_ENABLE_OBSOLETE = option no; # Gates ANUBIS/KHAZAD/SEED/TEA
