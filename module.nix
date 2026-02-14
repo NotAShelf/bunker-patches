@@ -9,6 +9,7 @@ let
   inherit (lib)
     concatMap
     mkEnableOption
+    mkMerge
     mkOption
     mkIf
     mkForce
@@ -275,6 +276,109 @@ let
     CFI_PERMISSIVE = no;
     ZERO_CALL_USED_REGS = yes;
     SECURITY_SAFESETID = yes;
+
+    # --- Dead network protocols ---
+    ATALK = option no; # Appletalk
+    ATM = option no; # Async Transfer Mode
+    AX25 = option no; # Amateur radio X.25
+    CAN = option no; # Controller Area Network
+    DECNET = option no; # DECnet
+    HAMRADIO = option no; # Amateur radio umbrella (ax25/netrom/rose)
+    IEEE802154 = option no; # Wireless sensor networks
+    IP_DCCP = option no; # Datagram Congestion Control
+    IP_SCTP = option no; # Stream Control Transmission
+    IPX = option no; # Internetwork Packet Exchange
+    NETROM = option no; # Amateur radio NetRom
+    N_HDLC = option no; # HDLC line discipline
+    ROSE = option no; # Amateur radio ROSE
+    RDS = option no; # Reliable Datagram Sockets
+    TIPC = option no; # Transparent IPC
+    X25 = option no; # X.25 packet switching
+    AF_RXRPC = option no; # RxRPC sessions (only for AFS)
+    AF_KCM = option no; # Kernel Connection Multiplexor
+    PHONET = option no; # Nokia Phonet
+    CAIF = option no; # ST-Ericsson modem IPC
+    "6LOWPAN" = option no; # IPv6 over low-power networks
+    NFC = option no; # Near Field Communication
+    WIMAX = option no; # WiMAX (dead standard)
+    MCTP = option no; # Management Component Transport
+    QRTR = option no; # Qualcomm IPC Router
+    HSR = option no; # High-availability Seamless Redundancy
+    MPLS = option no; # MPLS label switching
+    BATMAN_ADV = option no; # B.A.T.M.A.N. mesh
+    NET_DSA = option no; # Distributed Switch Architecture
+
+    # --- Server/cloud networking ---
+    OPENVSWITCH = option no; # Virtual switch (SDN)
+    VXLAN = option no; # Cloud overlay
+    GENEVE = option no; # Cloud overlay
+    NET_TEAM = option no; # Network teaming
+    BONDING = option no; # NIC bonding
+    MACSEC = option no; # 802.1AE MAC encryption
+    NET_SWITCHDEV = option no; # Switch offload
+
+    # --- Dead/unused filesystems ---
+    ADFS_FS = option no;
+    AFFS_FS = option no;
+    AFS_FS = option no; # Andrew File System
+    BEFS_FS = option no;
+    BFS_FS = option no;
+    CEPH_FS = option no;
+    CIFS = mkForce (option no); # NixOS might enable
+    CRAMFS = option no;
+    EFS_FS = option no;
+    EROFS_FS = option no;
+    F2FS_FS = option no;
+    GFS2_FS = option no;
+    HFS_FS = option no;
+    HFSPLUS_FS = option no;
+    HPFS_FS = option no;
+    JFFS2_FS = option no;
+    JFS_FS = option no;
+    MINIX_FS = option no;
+    NFS_FS = mkForce (option no); # NixOS enables by default
+    NILFS2_FS = option no;
+    OCFS2_FS = option no;
+    OMFS_FS = option no;
+    ORANGEFS_FS = option no;
+    QNX4FS_FS = option no;
+    QNX6FS_FS = option no;
+    REISERFS_FS = option no;
+    SMB_SERVER = option no; # ksmbd
+    SQUASHFS = mkForce (option no); # NixOS might enable
+    SYSV_FS = option no;
+    UDF_FS = option no;
+    VXFS_FS = option no; # freevxfs
+    ZONEFS_FS = option no;
+    "9P_FS" = option no; # Plan 9
+
+    # --- Dead subsystems ---
+    FIREWIRE = option no; # IEEE 1394
+    INFINIBAND = option no; # RDMA/InfiniBand
+    ISDN = option no; # ISDN telephony
+    PCMCIA = option no; # CardBus
+    PARPORT = option no; # Parallel port
+    GAMEPORT = option no; # Legacy gameport
+    COMEDI = option no; # Data acquisition
+    GREYBUS = option no; # Project Ara
+    STAGING = option no; # Experimental drivers
+
+    # --- Server block/storage ---
+    BLK_DEV_NBD = option no; # Network block device
+    BLK_DEV_RBD = option no; # Ceph/RADOS block
+    TARGET_CORE = option no; # SCSI target
+    ISCSI_TCP = option no; # iSCSI initiator
+    NVME_TARGET = option no; # NVMe-oF target
+
+    # --- Legacy/deprecated ---
+    USELIB = option no; # a.out uselib() syscall
+    SYSFS_SYSCALL = option no; # old sysfs() syscall
+    PCSPKR_PLATFORM = option no; # PC speaker
+    KEXEC = option no; # kexec (disabled at runtime anyway)
+
+    # --- VM guest (not applicable to bare-metal desktop) ---
+    DRM_VIRTIO_GPU = option no; # Virtio GPU
+    VIDEO_VIVID = option no; # Virtual video test driver
   };
 
   networkingConfig = optionalAttrs cfg.networking {
@@ -473,14 +577,77 @@ in
     };
   };
 
-  config = mkIf cfg.enable {
-    assertions = [
-      {
-        assertion = cfg.cpuArch == null || cfg.extras;
-        message = "bunker.kernel.cpuArch requires extras group (patch 0046 adds micro-arch targets).";
-      }
-    ];
+  config = mkIf cfg.enable (mkMerge [
+    {
+      assertions = [
+        {
+          assertion = cfg.cpuArch == null || cfg.extras;
+          message = "bunker.kernel.cpuArch requires extras group (patch 0046 adds micro-arch targets).";
+        }
+      ];
 
-    boot.kernelPackages = kernelPackage;
-  };
+      boot.kernelPackages = kernelPackage;
+    }
+
+    (mkIf cfg.hardened {
+      boot.kernel.sysctl = {
+        # Disable Magic SysRq key — potential security concern.
+        "kernel.sysrq" = 0;
+        # Hide kptrs even for processes with CAP_SYSLOG.
+        "kernel.kptr_restrict" = 2;
+        # Disable bpf() JIT (eliminates spray attacks).
+        "net.core.bpf_jit_enable" = false;
+        # Disable ftrace debugging.
+        "kernel.ftrace_enabled" = false;
+        # Restrict dmesg to root (CONFIG_SECURITY_DMESG_RESTRICT equivalent).
+        "kernel.dmesg_restrict" = 1;
+        # Prevent unintentional fifo writes.
+        "fs.protected_fifos" = 2;
+        # Prevent unintended writes to already-created files.
+        "fs.protected_regular" = 2;
+        # Disable SUID binary dump.
+        "fs.suid_dumpable" = 0;
+        # Disallow profiling without CAP_SYS_ADMIN.
+        "kernel.perf_event_paranoid" = 3;
+        # Require CAP_BPF to use bpf.
+        "kernel.unprivileged_bpf_disabled" = 1;
+
+        # --- Network hardening ---
+        # SYN flood protection.
+        "net.ipv4.tcp_syncookies" = 1;
+        # TIME-WAIT assassination protection (RFC 1337).
+        "net.ipv4.tcp_rfc1337" = 1;
+        # Reverse path filtering — drop spoofed-source packets.
+        "net.ipv4.conf.all.rp_filter" = 1;
+        "net.ipv4.conf.default.rp_filter" = 1;
+        # Disable ICMP redirects — prevents MITM via fake route injection.
+        "net.ipv4.conf.all.accept_redirects" = 0;
+        "net.ipv4.conf.default.accept_redirects" = 0;
+        "net.ipv6.conf.all.accept_redirects" = 0;
+        "net.ipv6.conf.default.accept_redirects" = 0;
+        "net.ipv4.conf.all.send_redirects" = 0;
+        "net.ipv4.conf.default.send_redirects" = 0;
+        # Disable source routing.
+        "net.ipv4.conf.all.accept_source_route" = 0;
+        "net.ipv6.conf.all.accept_source_route" = 0;
+        # Log martian packets.
+        "net.ipv4.conf.all.log_martians" = 1;
+        "net.ipv4.conf.default.log_martians" = 1;
+      };
+
+      boot.kernelParams = [
+        "module.sig_enforce=1"
+        "lockdown=confidentiality"
+        "page_alloc.shuffle=1"
+        "sysrq_always_enabled=0"
+        "kcore=off"
+      ];
+    })
+
+    (mkIf cfg.interactive {
+      boot.kernelParams = [
+        "fbcon=nodefer"
+      ];
+    })
+  ]);
 }
