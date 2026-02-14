@@ -8,6 +8,7 @@ flake:
 let
   inherit (lib)
     concatMap
+    mapAttrs
     mkEnableOption
     mkMerge
     mkOption
@@ -25,6 +26,8 @@ let
     ;
 
   cfg = config.bunker.kernel;
+  forceAll = mapAttrs (_: mkForce);
+  isX86 = pkgs.stdenv.hostPlatform.isx86_64;
 
   # Map user-facing major.minor → latest stable point release
   stableRelease = {
@@ -32,8 +35,8 @@ let
     "6.19" = "6.19";
   };
 
-  resolvedVersion = stableRelease.${cfg.version}
-    or (throw "bunker: unsupported kernel version ${cfg.version}");
+  resolvedVersion =
+    stableRelease.${cfg.version} or (throw "bunker: unsupported kernel version ${cfg.version}");
 
   # "6.18.10" → "6.18", "6.19" → "6.19"
   majorMinor = cfg.version;
@@ -187,7 +190,10 @@ let
   # and naturally skipped in 6.18 where the files don't exist.
   versionExtra = {
     "6.18" = {
-      drivers = [ "0204" "0206" ];
+      drivers = [
+        "0204"
+        "0206"
+      ];
       extras = [ "0205" ];
     };
   };
@@ -247,409 +253,470 @@ let
   baseConfig = {
     BUNKER = yes;
     LOCALVERSION = freeform "-bunker";
-    MODULE_COMPRESS_ZSTD = mkForce yes;
-    MODULE_COMPRESS_XZ = mkForce no;
+    MODULE_DECOMPRESS = yes; # in-kernel module decompression
+    FW_LOADER_COMPRESS_ZSTD = yes; # zstd firmware compression
+  }
+  // forceAll {
+    MODULE_COMPRESS_ZSTD = yes;
+    MODULE_COMPRESS_XZ = no;
   };
 
-  interactiveConfig = optionalAttrs cfg.interactive {
-    PREEMPT = mkOverride 90 yes;
-    PREEMPT_VOLUNTARY = mkOverride 90 no;
-    HZ = freeform "1000";
-    HZ_1000 = yes;
-    IOSCHED_BFQ = mkOverride 90 yes;
-    MQ_IOSCHED_ADIOS = yes;
-    TRANSPARENT_HUGEPAGE_ALWAYS = mkForce yes;
-    TRANSPARENT_HUGEPAGE_MADVISE = mkForce no;
-    MQ_IOSCHED_KYBER = mkForce no;
-    BLK_WBT = mkForce no;
-    BLK_WBT_MQ = mkForce (option no);
-    FUTEX = yes;
-    FUTEX_PI = yes;
-    NTSYNC = yes;
-    TREE_RCU = yes;
-    PREEMPT_RCU = yes;
-    RCU_EXPERT = yes;
-    TREE_SRCU = yes;
-    TASKS_RCU_GENERIC = yes;
-    TASKS_RCU = yes;
-    TASKS_RUDE_RCU = yes;
-    TASKS_TRACE_RCU = yes;
-    RCU_STALL_COMMON = yes;
-    RCU_NEED_SEGCBLIST = yes;
-    RCU_FANOUT = freeform "64";
-    RCU_FANOUT_LEAF = freeform "16";
-    RCU_BOOST = yes;
-    RCU_BOOST_DELAY = option (freeform "500");
-    RCU_NOCB_CPU = yes;
-    RCU_LAZY = yes;
-    RCU_DOUBLE_CHECK_CB_TIME = yes;
-    X86_AMD_PSTATE = yes;
-    X86_AMD_PSTATE_DEFAULT_MODE = freeform "3";
-  };
+  interactiveConfig = optionalAttrs cfg.interactive (
+    {
+      HZ = freeform "1000";
+      HZ_1000 = yes;
+      MQ_IOSCHED_ADIOS = yes;
+      FUTEX = yes;
+      FUTEX_PI = yes;
+      NTSYNC = yes;
+      TREE_RCU = yes;
+      PREEMPT_RCU = yes;
+      RCU_EXPERT = yes;
+      TREE_SRCU = yes;
+      TASKS_RCU_GENERIC = yes;
+      TASKS_RCU = yes;
+      TASKS_RUDE_RCU = yes;
+      TASKS_TRACE_RCU = yes;
+      RCU_STALL_COMMON = yes;
+      RCU_NEED_SEGCBLIST = yes;
+      RCU_FANOUT = freeform "64";
+      RCU_FANOUT_LEAF = freeform "16";
+      RCU_BOOST = yes;
+      RCU_BOOST_DELAY = option (freeform "500");
+      RCU_NOCB_CPU = yes;
+      RCU_LAZY = yes;
+      RCU_DOUBLE_CHECK_CB_TIME = yes;
+      LRU_GEN = yes; # Multi-gen LRU — better memory reclaim under pressure
+      LRU_GEN_ENABLED = yes;
+    }
+    // optionalAttrs isX86 {
+      X86_AMD_PSTATE = yes;
+      X86_AMD_PSTATE_DEFAULT_MODE = freeform "3";
+      X86_FRED = yes; # Flexible Return and Event Delivery (Zen 5+ / Arrow Lake+)
+      PERF_EVENTS_AMD_POWER = yes; # AMD power events for perf profiling
+    }
+    // mapAttrs (_: mkOverride 90) {
+      PREEMPT = yes;
+      PREEMPT_VOLUNTARY = no;
+      IOSCHED_BFQ = yes;
+    }
+    // forceAll {
+      TRANSPARENT_HUGEPAGE_ALWAYS = yes;
+      TRANSPARENT_HUGEPAGE_MADVISE = no;
+      MQ_IOSCHED_KYBER = no;
+      BLK_WBT = no;
+      BLK_WBT_MQ = option no;
+    }
+  );
 
-  hardenedConfig = optionalAttrs cfg.hardened {
-    # --- Security features ---
-    STRICT_DEVMEM = mkForce (option no);
-    IO_STRICT_DEVMEM = mkForce (option no);
-    CFI = yes;
-    CFI_PERMISSIVE = no;
-    ZERO_CALL_USED_REGS = yes;
-    SECURITY_SAFESETID = yes;
+  hardenedConfig = optionalAttrs cfg.hardened (
+    {
+      # --- Security features ---
+      CFI = yes;
+      CFI_PERMISSIVE = no;
+      ZERO_CALL_USED_REGS = yes;
+      SECURITY_SAFESETID = yes;
+      BUG_ON_DATA_CORRUPTION = yes; # panic on slab/list corruption
+      SECURITY_DMESG_RESTRICT = yes; # restrict dmesg before sysctl runs
 
-    # --- Attack surface reduction (KSPP) ---
-    USELIB = mkForce (option no); # a.out uselib() syscall
-    SYSFS_SYSCALL = mkForce (option no); # old sysfs() syscall
-    KEXEC = mkForce (option no); # bypasses secure boot chain
-    X86_IOPL_IOPERM = mkForce (option no); # IOPL/IOPERM syscalls
-    X86_VSYSCALL_EMULATION = mkForce (option no); # legacy vsyscall page
-    X86_X32_ABI = mkForce (option no); # x32 ABI (exotic, deprecated)
-    X86_SGX = mkForce (option no); # Intel SGX enclaves
-    DEVPORT = mkForce (option no); # /dev/port I/O port access
+      # --- ASLR maximization ---
+      ARCH_MMAP_RND_BITS = freeform "32"; # max ASLR entropy for mmap (default 28)
+      ARCH_MMAP_RND_COMPAT_BITS = freeform "16"; # max ASLR for 32-bit compat
+      RANDOMIZE_KSTACK_OFFSET_DEFAULT = yes; # randomize kernel stack per syscall
 
-    # --- Unused security modules ---
-    SECURITY_SELINUX = mkForce (option no); # SELinux (~20k LOC, NixOS uses AppArmor)
-    SECURITY_TOMOYO = mkForce (option no); # TOMOYO (~10k LOC, unused on NixOS)
+      # --- Integrity & verified boot ---
+      TRUSTED_KEYS = yes; # TPM-sealed keys
+      ENCRYPTED_KEYS = yes; # kernel-managed encrypted keys (dm-crypt, IMA)
+      FS_VERITY = yes; # file-level Merkle tree integrity
+      FS_VERITY_BUILTIN_SIGNATURES = yes; # verify fs-verity against built-in X.509
+      DM_VERITY_VERIFY_ROOTHASH_SIG = yes; # signature check on dm-verity root hash
+      FS_ENCRYPTION_INLINE_CRYPT = yes; # hardware crypto offload for fscrypt
+    }
+    // forceAll {
+      # --- Disabled features — attack surface reduction, debug infra, etc. ---
+      STRICT_DEVMEM = option no;
+      IO_STRICT_DEVMEM = option no;
 
-    # --- Obsolete crypto ---
-    CRYPTO_USER_API_ENABLE_OBSOLETE = mkForce (option no); # Gates ANUBIS/KHAZAD/SEED/TEA
-    CRYPTO_FCRYPT = mkForce (option no); # fcrypt (only for dead AFS/RxRPC)
+      # Attack surface reduction (KSPP)
+      USELIB = option no; # a.out uselib() syscall
+      SYSFS_SYSCALL = option no; # old sysfs() syscall
+      KEXEC = option no; # bypasses secure boot chain
+      KEXEC_JUMP = option no; # kexec hibernation variant
+      BOOT_CONFIG = option no; # extra kernel params via initrd bootconfig
+      X86_IOPL_IOPERM = option no; # IOPL/IOPERM syscalls
+      X86_VSYSCALL_EMULATION = option no; # legacy vsyscall page
+      X86_X32_ABI = option no; # x32 ABI (exotic, deprecated)
+      X86_SGX = option no; # Intel SGX enclaves
+      DEVPORT = option no; # /dev/port I/O port access
 
-    # --- Debug/testing infrastructure ---
-    KCOV = mkForce (option no); # Syzkaller fuzzing infra
-    GCOV_KERNEL = mkForce (option no); # Kernel code coverage
-    FAULT_INJECTION = mkForce (option no); # Debug fault injection framework
-    KASAN = mkForce (option no); # Kernel Address Sanitizer
-    KMEMLEAK = mkForce (option no); # Kernel memory leak detector
-    PROVE_LOCKING = mkForce (option no); # Lock dependency validator (lockdep)
-    LOCK_STAT = mkForce (option no); # Lock contention statistics
-    NOTIFIER_ERROR_INJECTION = mkForce (option no); # Error injection for notifier chains
-    DEBUG_PAGEALLOC = mkForce (option no); # Debug page allocation
-    KUNIT = mkForce (option no); # Kernel unit testing framework
-    EXT4_DEBUG = mkForce (option no); # ext4 debug
-    JBD2_DEBUG = mkForce (option no); # ext4 journaling debug
-    SLUB_DEBUG = mkForce (option no); # SLUB allocator debug
-    DYNAMIC_DEBUG = mkForce (option no); # Runtime pr_debug control
+      # Unused security modules
+      SECURITY_SELINUX = option no; # SELinux (~20k LOC, NixOS uses AppArmor)
+      SECURITY_TOMOYO = option no; # TOMOYO (~10k LOC, unused on NixOS)
 
-    # --- Child options of disabled security parents ---
-    X86_SGX_KVM = mkForce (option no);
-  };
+      # Obsolete crypto
+      CRYPTO_USER_API_ENABLE_OBSOLETE = option no; # Gates ANUBIS/KHAZAD/SEED/TEA
+      CRYPTO_FCRYPT = option no; # fcrypt (only for dead AFS/RxRPC)
 
-  trimmedConfig = optionalAttrs cfg.trimmed {
+      # Debug/testing infrastructure
+      KCOV = option no; # Syzkaller fuzzing infra
+      GCOV_KERNEL = option no; # Kernel code coverage
+      FAULT_INJECTION = option no; # Debug fault injection framework
+      KASAN = option no; # Kernel Address Sanitizer
+      KMEMLEAK = option no; # Kernel memory leak detector
+      PROVE_LOCKING = option no; # Lock dependency validator (lockdep)
+      LOCK_STAT = option no; # Lock contention statistics
+      NOTIFIER_ERROR_INJECTION = option no; # Error injection for notifier chains
+      DEBUG_PAGEALLOC = option no; # Debug page allocation
+      KUNIT = option no; # Kernel unit testing framework
+      EXT4_DEBUG = option no; # ext4 debug
+      JBD2_DEBUG = option no; # ext4 journaling debug
+      SLUB_DEBUG = option no; # SLUB allocator debug
+      DYNAMIC_DEBUG = option no; # Runtime pr_debug control
+      FUNCTION_TRACER = option no; # ftrace (stronger than sysctl disable)
+      FUNCTION_GRAPH_TRACER = option no; # ftrace graph tracer
+      PM_DEBUG = option no; # Power management debug
+      PM_ADVANCED_DEBUG = option no; # Advanced PM debug
+      PM_SLEEP_DEBUG = option no; # PM sleep debug
+      ACPI_DEBUG = option no; # ACPI debug
+      SCHED_DEBUG = option no; # Scheduler debug
+      LATENCYTOP = option no; # Latency measurement infrastructure
+      DEBUG_PREEMPT = option no; # Preemption debug
+      DEBUG_MISC = option no; # Miscellaneous debug
+      GENERIC_IRQ_DEBUGFS = option no; # IRQ debug filesystem
+      X86_MCE_INJECT = option no; # MCE injection for testing
+      HIBERNATION = option no; # writes unencrypted memory to disk
+
+      # Child options of disabled security parents
+      X86_SGX_KVM = option no;
+    }
+  );
+
+  trimmedConfig = optionalAttrs cfg.trimmed (forceAll {
     # --- Dead network hardware ---
-    ARCNET = mkForce (option no); # 1970s token-passing network
-    FDDI = mkForce (option no); # 1980s fiber ring
-    HIPPI = mkForce (option no); # 1990s supercomputer interconnect
-    PLIP = mkForce (option no); # Parallel Line IP
-    EQUALIZER = mkForce (option no); # Serial/PLIP link load balancer
+    ARCNET = option no; # 1970s token-passing network
+    FDDI = option no; # 1980s fiber ring
+    HIPPI = option no; # 1990s supercomputer interconnect
+    PLIP = option no; # Parallel Line IP
+    EQUALIZER = option no; # Serial/PLIP link load balancer
 
     # --- Dead network protocols ---
-    ATALK = mkForce (option no); # Appletalk
-    ATM = mkForce (option no); # Async Transfer Mode
-    AX25 = mkForce (option no); # Amateur radio X.25
-    CAN = mkForce (option no); # Controller Area Network
-    DECNET = mkForce (option no); # DECnet
-    HAMRADIO = mkForce (option no); # Amateur radio umbrella (ax25/netrom/rose)
-    IEEE802154 = mkForce (option no); # Wireless sensor networks
-    IP_DCCP = mkForce (option no); # Datagram Congestion Control
-    IP_SCTP = mkForce (option no); # Stream Control Transmission
-    IPX = mkForce (option no); # Internetwork Packet Exchange
-    NETROM = mkForce (option no); # Amateur radio NetRom
-    N_HDLC = mkForce (option no); # HDLC line discipline
-    ROSE = mkForce (option no); # Amateur radio ROSE
-    RDS = mkForce (option no); # Reliable Datagram Sockets
-    TIPC = mkForce (option no); # Transparent IPC
-    X25 = mkForce (option no); # X.25 packet switching
-    AF_RXRPC = mkForce (option no); # RxRPC sessions (only for AFS)
-    AF_KCM = mkForce (option no); # Kernel Connection Multiplexor
-    PHONET = mkForce (option no); # Nokia Phonet
-    CAIF = mkForce (option no); # ST-Ericsson modem IPC
-    "6LOWPAN" = mkForce (option no); # IPv6 over low-power networks
-    NFC = mkForce (option no); # Near Field Communication
-    WIMAX = mkForce (option no); # WiMAX (dead standard)
-    MCTP = mkForce (option no); # Management Component Transport
-    HSR = mkForce (option no); # High-availability Seamless Redundancy
-    OPENVSWITCH = mkForce (option no); # Open vSwitch (selects MPLS)
-    MPLS = mkForce (option no);
-    BATMAN_ADV = mkForce (option no); # B.A.T.M.A.N. mesh
-    NET_DSA = mkForce (option no); # Distributed Switch Architecture
+    ATALK = option no; # Appletalk
+    ATM = option no; # Async Transfer Mode
+    AX25 = option no; # Amateur radio X.25
+    CAN = option no; # Controller Area Network
+    DECNET = option no; # DECnet
+    HAMRADIO = option no; # Amateur radio umbrella (ax25/netrom/rose)
+    IEEE802154 = option no; # Wireless sensor networks
+    IP_DCCP = option no; # Datagram Congestion Control
+    IP_SCTP = option no; # Stream Control Transmission
+    IPX = option no; # Internetwork Packet Exchange
+    NETROM = option no; # Amateur radio NetRom
+    N_HDLC = option no; # HDLC line discipline
+    ROSE = option no; # Amateur radio ROSE
+    RDS = option no; # Reliable Datagram Sockets
+    TIPC = option no; # Transparent IPC
+    X25 = option no; # X.25 packet switching
+    AF_RXRPC = option no; # RxRPC sessions (only for AFS)
+    AF_KCM = option no; # Kernel Connection Multiplexor
+    PHONET = option no; # Nokia Phonet
+    CAIF = option no; # ST-Ericsson modem IPC
+    "6LOWPAN" = option no; # IPv6 over low-power networks
+    NFC = option no; # Near Field Communication
+    WIMAX = option no; # WiMAX (dead standard)
+    MCTP = option no; # Management Component Transport
+    HSR = option no; # High-availability Seamless Redundancy
+    OPENVSWITCH = option no; # Open vSwitch (selects MPLS)
+    MPLS = option no;
+    BATMAN_ADV = option no; # B.A.T.M.A.N. mesh
+    NET_DSA = option no; # Distributed Switch Architecture
 
     # --- Server/cloud networking ---
-    GENEVE = mkForce (option no); # Cloud overlay
-    NET_TEAM = mkForce (option no); # Network teaming
-    MACSEC = mkForce (option no); # 802.1AE MAC encryption
-    NET_SWITCHDEV = mkForce (option no); # Switch offload
+    GENEVE = option no; # Cloud overlay
+    NET_TEAM = option no; # Network teaming
+    MACSEC = option no; # 802.1AE MAC encryption
+    NET_SWITCHDEV = option no; # Switch offload
 
     # --- Dead/unused filesystems ---
-    ADFS_FS = mkForce (option no);
-    AFFS_FS = mkForce (option no);
-    AFS_FS = mkForce (option no); # Andrew File System
-    BEFS_FS = mkForce (option no);
-    BFS_FS = mkForce (option no);
-    CEPH_FS = mkForce (option no);
-    CIFS = mkForce (option no); # NixOS might enable
-    CRAMFS = mkForce (option no);
-    EFS_FS = mkForce (option no);
-    EROFS_FS = mkForce (option no);
-    F2FS_FS = mkForce (option no);
-    GFS2_FS = mkForce (option no);
-    HFS_FS = mkForce (option no);
-    HFSPLUS_FS = mkForce (option no);
-    HPFS_FS = mkForce (option no);
-    JFFS2_FS = mkForce (option no);
-    JFS_FS = mkForce (option no);
-    MINIX_FS = mkForce (option no);
-    NILFS2_FS = mkForce (option no);
-    OCFS2_FS = mkForce (option no);
-    OMFS_FS = mkForce (option no);
-    ORANGEFS_FS = mkForce (option no);
-    QNX4FS_FS = mkForce (option no);
-    QNX6FS_FS = mkForce (option no);
-    REISERFS_FS = mkForce (option no);
-    SMB_SERVER = mkForce (option no); # ksmbd
-    SQUASHFS = mkForce (option no); # NixOS might enable
-    SYSV_FS = mkForce (option no);
-    UDF_FS = mkForce (option no);
-    VXFS_FS = mkForce (option no); # freevxfs
-    ZONEFS_FS = mkForce (option no);
-    CODA_FS = mkForce (option no); # Coda distributed filesystem
-    ROMFS_FS = mkForce (option no); # ROM filesystem (embedded)
-    UBIFS_FS = mkForce (option no); # UBI flash filesystem (embedded)
-    NTFS_FS = mkForce (option no); # Old NTFS driver (NTFS3 supersedes)
-    MSDOS_FS = mkForce (option no); # 8.3 FAT (VFAT supersedes)
+    ADFS_FS = option no;
+    AFFS_FS = option no;
+    AFS_FS = option no; # Andrew File System
+    BEFS_FS = option no;
+    BFS_FS = option no;
+    CEPH_FS = option no;
+    CIFS = option no; # NixOS might enable
+    CRAMFS = option no;
+    EFS_FS = option no;
+    EROFS_FS = option no;
+    F2FS_FS = option no;
+    GFS2_FS = option no;
+    HFS_FS = option no;
+    HFSPLUS_FS = option no;
+    HPFS_FS = option no;
+    JFFS2_FS = option no;
+    JFS_FS = option no;
+    MINIX_FS = option no;
+    NILFS2_FS = option no;
+    OCFS2_FS = option no;
+    OMFS_FS = option no;
+    ORANGEFS_FS = option no;
+    QNX4FS_FS = option no;
+    QNX6FS_FS = option no;
+    REISERFS_FS = option no;
+    SMB_SERVER = option no; # ksmbd
+    SQUASHFS = option no; # NixOS might enable
+    SYSV_FS = option no;
+    UDF_FS = option no;
+    VXFS_FS = option no; # freevxfs
+    ZONEFS_FS = option no;
+    CODA_FS = option no; # Coda distributed filesystem
+    ROMFS_FS = option no; # ROM filesystem (embedded)
+    UBIFS_FS = option no; # UBI flash filesystem (embedded)
+    NTFS_FS = option no; # Old NTFS driver (NTFS3 supersedes)
+    MSDOS_FS = option no; # 8.3 FAT (VFAT supersedes)
 
     # --- Dead subsystems ---
-    FIREWIRE = mkForce (option no); # IEEE 1394
-    INFINIBAND = mkForce (option no); # RDMA/InfiniBand
-    ISDN = mkForce (option no); # ISDN telephony
-    PCMCIA = mkForce (option no); # CardBus
-    PARPORT = mkForce (option no); # Parallel port
-    INPUT_JOYSTICK = mkForce no; # Disables all gameport joystick drivers
-    GAMEPORT = mkForce (option no); # Legacy gameport (freed by INPUT_JOYSTICK=n)
-    COMEDI = mkForce (option no); # Data acquisition
-    GREYBUS = mkForce (option no); # Project Ara
-    STAGING = mkForce (option no); # Experimental drivers
+    FIREWIRE = option no; # IEEE 1394
+    PROVIDE_OHCI1394_DMA_INIT = option no; # FireWire remote debug on boot
+    INFINIBAND = option no; # RDMA/InfiniBand
+    ISDN = option no; # ISDN telephony
+    PCMCIA = option no; # CardBus
+    PARPORT = option no; # Parallel port
+    INPUT_JOYSTICK = no; # Disables all gameport joystick drivers (bool, not tristate)
+    GAMEPORT = option no; # Legacy gameport (freed by INPUT_JOYSTICK=n)
+    COMEDI = option no; # Data acquisition
+    GREYBUS = option no; # Project Ara
+    STAGING = option no; # Experimental drivers
 
     # --- Dead buses/subsystems (industrial/embedded/ARM) ---
-    VME_BUS = mkForce (option no); # VMEbus (1980s industrial crate bus)
-    RAPIDIO = mkForce (option no); # Telecom/DSP interconnect
-    IPACK = mkForce (option no); # IndustryPack automation
-    SIOX = mkForce (option no); # Eckelmann industrial protocol
-    HSI = mkForce (option no); # Nokia modem serial (one dead chipset)
-    MOST = mkForce (option no); # Automotive infotainment bus
-    SPMI = mkForce (option no); # Qualcomm ARM power management bus
-    SLIMBUS = mkForce (option no); # Qualcomm ARM audio codec bus
-    INTERCONNECT = mkForce (option no); # ARM SoC interconnect framework
-    BATTERY_DS2780 = mkForce (option no); # niche battery chip (selects W1)
-    BATTERY_DS2781 = mkForce (option no); # niche battery chip (selects W1)
-    W1 = mkForce (option no); # 1-Wire bus
-    NTB = mkForce (option no); # Non-Transparent Bridge (multi-host PCIe)
-    COUNTER = mkForce (option no); # Embedded quadrature encoders
-    GNSS = mkForce (option no); # GPS/GNSS receivers over serial
-    MELLANOX_PLATFORM = mkForce (option no); # Mellanox switch ASICs (not ConnectX NICs)
-    PCCARD = mkForce (option no); # 16-bit PC Card (dead since ~2005)
-    AGP = mkForce (option no); # Accelerated Graphics Port (all GPUs use PCIe)
-    EISA = mkForce (option no); # Extended ISA bus (dead since ~2000)
-    I3C = mkForce (option no); # MIPI I3C bus (embedded/phone only)
-    MTD = mkForce (option no); # Memory Technology Devices (raw flash, embedded)
+    VME_BUS = option no; # VMEbus (1980s industrial crate bus)
+    RAPIDIO = option no; # Telecom/DSP interconnect
+    IPACK = option no; # IndustryPack automation
+    SIOX = option no; # Eckelmann industrial protocol
+    HSI = option no; # Nokia modem serial (one dead chipset)
+    MOST = option no; # Automotive infotainment bus
+    SPMI = option no; # Qualcomm ARM power management bus
+    SLIMBUS = option no; # Qualcomm ARM audio codec bus
+    INTERCONNECT = option no; # ARM SoC interconnect framework
+    BATTERY_DS2780 = option no; # niche battery chip (selects W1)
+    BATTERY_DS2781 = option no; # niche battery chip (selects W1)
+    W1 = option no; # 1-Wire bus
+    NTB = option no; # Non-Transparent Bridge (multi-host PCIe)
+    COUNTER = option no; # Embedded quadrature encoders
+    GNSS = option no; # GPS/GNSS receivers over serial
+    MELLANOX_PLATFORM = option no; # Mellanox switch ASICs (not ConnectX NICs)
+    PCCARD = option no; # 16-bit PC Card (dead since ~2005)
+    AGP = option no; # Accelerated Graphics Port (all GPUs use PCIe)
+    EISA = option no; # Extended ISA bus (dead since ~2000)
+    I3C = option no; # MIPI I3C bus (embedded/phone only)
+    MTD = option no; # Memory Technology Devices (raw flash, embedded)
 
     # --- Dead memory technologies ---
-    X86_PMEM_LEGACY = mkForce (option no); # non-standard NVDIMMs (selects LIBNVDIMM)
-    ACPI_NFIT = mkForce (option no); # NVDIMM firmware table (selects LIBNVDIMM)
-    LIBNVDIMM = mkForce (option no); # persistent memory
-    DEV_DAX = mkForce (option no); # DAX devices for persistent memory
-    CXL_BUS = mkForce (option no); # Compute Express Link (bleeding-edge server)
+    X86_PMEM_LEGACY = option no; # non-standard NVDIMMs (selects LIBNVDIMM)
+    ACPI_NFIT = option no; # NVDIMM firmware table (selects LIBNVDIMM)
+    LIBNVDIMM = option no; # persistent memory
+    DEV_DAX = option no; # DAX devices for persistent memory
+    CXL_BUS = option no; # Compute Express Link (bleeding-edge server)
 
     # --- Dead GPU drivers ---
-    DRM_SIS = mkForce (option no); # SiS GPUs (dead vendor ~2008)
-    DRM_VIA = mkForce (option no); # VIA GPUs (dead GPU division)
-    DRM_SAVAGE = mkForce (option no); # S3 Savage GPUs (dead ~2003)
-    DRM_NOUVEAU = mkForce (option no); # NVIDIA open-source (use proprietary or AMD)
-    DRM_RADEON = mkForce (option no); # Pre-GCN AMD GPUs (pre-2012, use AMDGPU)
+    DRM_SIS = option no; # SiS GPUs (dead vendor ~2008)
+    DRM_VIA = option no; # VIA GPUs (dead GPU division)
+    DRM_SAVAGE = option no; # S3 Savage GPUs (dead ~2003)
+    DRM_NOUVEAU = option no; # NVIDIA open-source (use proprietary or AMD)
+    DRM_RADEON = option no; # Pre-GCN AMD GPUs (pre-2012, use AMDGPU)
 
     # --- Dead misc hardware ---
-    MEMSTICK = mkForce (option no); # Sony Memory Stick (dead format)
-    PHONE = mkForce (option no); # ISA/PCI telephony cards
-    AUXDISPLAY = mkForce (option no); # Character LCD displays (parallel port)
-    ACRN_GUEST = mkForce (option no); # ACRN hypervisor guest (dead hypervisor)
-    RAW_DRIVER = mkForce (option no); # /dev/raw (deprecated, use O_DIRECT)
-    INTEL_IOATDMA = mkForce (option no); # old Xeon DMA engine (selects DCA)
-    DCA = mkForce (option no); # Direct Cache Access
-    HANGCHECK_TIMER = mkForce (option no); # Server cluster heartbeat
-    HOTPLUG_PCI_CPCI = mkForce (option no); # CompactPCI hotplug (industrial)
-    BLK_DEV_DRBD = mkForce (option no); # DRBD distributed block replication
-    MOUSE_SERIAL = mkForce (option no); # Serial mice (RS-232)
-    SERIO_SERPORT = mkForce (option no); # Serial port input devices
-    SND_ISA = mkForce (option no); # ISA sound cards
+    MEMSTICK = option no; # Sony Memory Stick (dead format)
+    PHONE = option no; # ISA/PCI telephony cards
+    AUXDISPLAY = option no; # Character LCD displays (parallel port)
+    ACRN_GUEST = option no; # ACRN hypervisor guest (dead hypervisor)
+    RAW_DRIVER = option no; # /dev/raw (deprecated, use O_DIRECT)
+    INTEL_IOATDMA = option no; # old Xeon DMA engine (selects DCA)
+    DCA = option no; # Direct Cache Access
+    HANGCHECK_TIMER = option no; # Server cluster heartbeat
+    HOTPLUG_PCI_CPCI = option no; # CompactPCI hotplug (industrial)
+    BLK_DEV_DRBD = option no; # DRBD distributed block replication
+    MOUSE_SERIAL = option no; # Serial mice (RS-232)
+    SERIO_SERPORT = option no; # Serial port input devices
+    SND_ISA = option no; # ISA sound cards
     # Legacy PCI sound cards (select SND_OPL3_LIB / SND_MPU401_UART)
-    SND_ALS300 = mkForce (option no);
-    SND_ALS4000 = mkForce (option no);
-    SND_ALI5451 = mkForce (option no);
-    SND_AU8810 = mkForce (option no);
-    SND_AU8820 = mkForce (option no);
-    SND_AU8830 = mkForce (option no);
-    SND_AZT3328 = mkForce (option no);
-    SND_CMIPCI = mkForce (option no);
-    SND_OXYGEN = mkForce (option no);
-    SND_CS4281 = mkForce (option no);
-    SND_ES1938 = mkForce (option no);
-    SND_ES1968 = mkForce (option no);
-    SND_FM801 = mkForce (option no);
-    SND_ICE1712 = mkForce (option no);
-    SND_RIPTIDE = mkForce (option no);
-    SND_SE6X = mkForce (option no);
-    SND_SONICVIBES = mkForce (option no);
-    SND_TRIDENT = mkForce (option no);
-    SND_VIA82XX = mkForce (option no);
-    SND_VIRTUOSO = mkForce (option no);
-    SND_YMFPCI = mkForce (option no);
-    SND_MPU401 = mkForce (option no); # standalone MPU-401 driver
-    SND_OPL3_LIB = mkForce (option no);
-    SND_OPL4_LIB = mkForce (option no);
-    SND_MPU401_UART = mkForce (option no);
-    SND_SB_COMMON = mkForce (option no); # SoundBlaster common (ISA-era)
-    SND_OSSEMUL = mkForce (option no); # OSS API emulation (deprecated ~20yr)
-    SND_PCM_OSS = mkForce (option no); # OSS /dev/dsp emulation
-    SND_MIXER_OSS = mkForce (option no); # OSS /dev/mixer emulation
-    SND_SEQUENCER_OSS = mkForce (option no); # OSS sequencer emulation
-    SND_SERIAL_U16550 = mkForce (option no); # UART16550 serial MIDI
+    SND_ALS300 = option no;
+    SND_ALS4000 = option no;
+    SND_ALI5451 = option no;
+    SND_AU8810 = option no;
+    SND_AU8820 = option no;
+    SND_AU8830 = option no;
+    SND_AZT3328 = option no;
+    SND_CMIPCI = option no;
+    SND_OXYGEN = option no;
+    SND_CS4281 = option no;
+    SND_ES1938 = option no;
+    SND_ES1968 = option no;
+    SND_FM801 = option no;
+    SND_ICE1712 = option no;
+    SND_RIPTIDE = option no;
+    SND_SE6X = option no;
+    SND_SONICVIBES = option no;
+    SND_TRIDENT = option no;
+    SND_VIA82XX = option no;
+    SND_VIRTUOSO = option no;
+    SND_YMFPCI = option no;
+    SND_MPU401 = option no; # standalone MPU-401 driver
+    SND_OPL3_LIB = option no;
+    SND_OPL4_LIB = option no;
+    SND_MPU401_UART = option no;
+    SND_SB_COMMON = option no; # SoundBlaster common (ISA-era)
+    SND_OSSEMUL = option no; # OSS API emulation (deprecated ~20yr)
+    SND_PCM_OSS = option no; # OSS /dev/dsp emulation
+    SND_MIXER_OSS = option no; # OSS /dev/mixer emulation
+    SND_SEQUENCER_OSS = option no; # OSS sequencer emulation
+    SND_SERIAL_U16550 = option no; # UART16550 serial MIDI
 
     # --- Dead input devices ---
-    JOYSTICK_ANALOG = mkForce (option no); # Analog gameport joystick
-    MOUSE_ATIXL = mkForce (option no); # ATI XL bus mouse
-    MOUSE_INPORT = mkForce (option no); # Microsoft InPort bus mouse
-    MOUSE_LOGIBM = mkForce (option no); # Logitech bus mouse
-    KEYBOARD_LKKBD = mkForce (option no); # DEC LK201/LK401 (serial)
-    KEYBOARD_NEWTON = mkForce (option no); # Apple Newton keyboard
-    KEYBOARD_SUNKBD = mkForce (option no); # Sun keyboard (serial)
-    KEYBOARD_STOWAWAY = mkForce (option no); # Stowaway portable keyboard
+    JOYSTICK_ANALOG = option no; # Analog gameport joystick
+    MOUSE_ATIXL = option no; # ATI XL bus mouse
+    MOUSE_INPORT = option no; # Microsoft InPort bus mouse
+    MOUSE_LOGIBM = option no; # Logitech bus mouse
+    KEYBOARD_LKKBD = option no; # DEC LK201/LK401 (serial)
+    KEYBOARD_NEWTON = option no; # Apple Newton keyboard
+    KEYBOARD_SUNKBD = option no; # Sun keyboard (serial)
+    KEYBOARD_STOWAWAY = option no; # Stowaway portable keyboard
 
     # --- Dead platform drivers ---
-    SONYPI = mkForce (option no); # Old Sony VAIO programmable I/O
-    ACPI_CMPC = mkForce (option no); # Classmate PC (dead OLPC-like)
-    COMPAL_LAPTOP = mkForce (option no); # Compal IFL90/JFL92 laptops
-    AMILO_RFKILL = mkForce (option no); # Fujitsu Amilo RF kill
-    TOSHIBA_HAPS = mkForce (option no); # Toshiba HDD Active Protection (SSD era)
+    SONYPI = option no; # Old Sony VAIO programmable I/O
+    ACPI_CMPC = option no; # Classmate PC (dead OLPC-like)
+    COMPAL_LAPTOP = option no; # Compal IFL90/JFL92 laptops
+    AMILO_RFKILL = option no; # Fujitsu Amilo RF kill
+    TOSHIBA_HAPS = option no; # Toshiba HDD Active Protection (SSD era)
 
     # --- Dead block/storage hardware ---
-    BLK_DEV_FD = mkForce (option no); # Floppy disk
-    PATA_LEGACY = mkForce (option no); # ISA-era parallel ATA
-    PATA_ISAPNP = mkForce (option no); # ISA PnP parallel ATA
-    BLK_DEV_DAC960 = mkForce (option no); # Mylex DAC960 RAID (dead vendor)
-    BLK_DEV_UMEM = mkForce (option no); # Micro Memory MM5415 RAM card
+    BLK_DEV_FD = option no; # Floppy disk
+    PATA_LEGACY = option no; # ISA-era parallel ATA
+    PATA_ISAPNP = option no; # ISA PnP parallel ATA
+    BLK_DEV_DAC960 = option no; # Mylex DAC960 RAID (dead vendor)
+    BLK_DEV_UMEM = option no; # Micro Memory MM5415 RAM card
+    BLK_DEV_NULL_BLK = option no; # Null block device (testing only)
+    CRYPTO_842 = option no; # 842 compression algorithm (rarely used)
 
     # --- Dead cpufreq drivers ---
-    X86_SPEEDSTEP_CENTRINO = mkForce (option no); # Pentium M/Centrino
-    X86_SPEEDSTEP_ICH = mkForce (option no); # Old ICH chipsets
-    X86_SPEEDSTEP_SMI = mkForce (option no); # SMI-based (ancient laptops)
-    X86_SPEEDSTEP_LIB = mkForce (option no); # SpeedStep common code
-    X86_P4_CLOCKMOD = mkForce (option no); # Pentium 4 clock modulation
-    X86_POWERNOW_K6 = mkForce (option no); # AMD K6
-    X86_POWERNOW_K7 = mkForce (option no); # AMD K7 (Athlon)
-    X86_POWERNOW_K8 = mkForce (option no); # AMD K8 (Athlon 64)
-    X86_GX_SUSPMOD = mkForce (option no); # Cyrix/NatSemi Geode GX
-    X86_LONGHAUL = mkForce (option no); # VIA C3
-    X86_E_POWERSAVER = mkForce (option no); # VIA C7
-    X86_LONGRUN = mkForce (option no); # Transmeta (bankrupt)
+    X86_SPEEDSTEP_CENTRINO = option no; # Pentium M/Centrino
+    X86_SPEEDSTEP_ICH = option no; # Old ICH chipsets
+    X86_SPEEDSTEP_SMI = option no; # SMI-based (ancient laptops)
+    X86_SPEEDSTEP_LIB = option no; # SpeedStep common code
+    X86_P4_CLOCKMOD = option no; # Pentium 4 clock modulation
+    X86_POWERNOW_K6 = option no; # AMD K6
+    X86_POWERNOW_K7 = option no; # AMD K7 (Athlon)
+    X86_POWERNOW_K8 = option no; # AMD K8 (Athlon 64)
+    X86_GX_SUSPMOD = option no; # Cyrix/NatSemi Geode GX
+    X86_LONGHAUL = option no; # VIA C3
+    X86_E_POWERSAVER = option no; # VIA C7
+    X86_LONGRUN = option no; # Transmeta (bankrupt)
 
     # --- Dead misc drivers ---
-    APPLICOM = mkForce (option no); # Industrial fieldbus cards
-    PHANTOM = mkForce (option no); # SensAble PHANToM haptic device
-    MMC_TIFM_SD = mkForce (option no); # TI flash media SD (selects TIFM_CORE)
-    MEMSTICK_TIFM_MS = mkForce (option no); # TI flash media MemoryStick (selects TIFM_CORE)
-    TIFM_CORE = mkForce (option no);
-    TELCLOCK = mkForce (option no); # Telecom clock (MCPL0010)
-    ECHO = mkForce (option no); # Telephony echo cancellation
-    RPMSG = mkForce (option no); # Remote Processor Messaging (ARM)
-    REMOTEPROC = mkForce (option no); # Remote Processor framework (ARM)
+    APPLICOM = option no; # Industrial fieldbus cards
+    PHANTOM = option no; # SensAble PHANToM haptic device
+    MMC_TIFM_SD = option no; # TI flash media SD (selects TIFM_CORE)
+    MEMSTICK_TIFM_MS = option no; # TI flash media MemoryStick (selects TIFM_CORE)
+    TIFM_CORE = option no;
+    TELCLOCK = option no; # Telecom clock (MCPL0010)
+    ECHO = option no; # Telephony echo cancellation
+    RPMSG = option no; # Remote Processor Messaging (ARM)
+    REMOTEPROC = option no; # Remote Processor framework (ARM)
 
     # --- Dead media ---
-    MEDIA_ANALOG_TV_SUPPORT = mkForce (option no); # Analog TV (shut off globally)
-    MEDIA_DIGITAL_TV_SUPPORT = mkForce (option no); # DVB digital TV tuners
-    DVB_CORE = mkForce (option no); # Digital Video Broadcasting
-    MEDIA_SDR_SUPPORT = mkForce (option no); # Software defined radio
+    MEDIA_ANALOG_TV_SUPPORT = option no; # Analog TV (shut off globally)
+    MEDIA_DIGITAL_TV_SUPPORT = option no; # DVB digital TV tuners
+    DVB_CORE = option no; # Digital Video Broadcasting
+    MEDIA_SDR_SUPPORT = option no; # Software defined radio
 
     # --- Dead network transports ---
-    SLIP = mkForce (option no); # Serial Line IP (dialup)
-    ATA_OVER_ETH = mkForce (option no); # ATA over Ethernet
-    LAPB = mkForce (option no); # X.25 link layer
-    PKTGEN = mkForce (option no); # Kernel packet generator (testing)
-    N_GSM = mkForce (option no); # GSM 0710 mux for old serial modems
-    BT_CMTP = mkForce (option no); # Bluetooth CAPI (ISDN over BT)
+    SLIP = option no; # Serial Line IP (dialup)
+    ATA_OVER_ETH = option no; # ATA over Ethernet
+    LAPB = option no; # X.25 link layer
+    PKTGEN = option no; # Kernel packet generator (testing)
+    N_GSM = option no; # GSM 0710 mux for old serial modems
+    BT_CMTP = option no; # Bluetooth CAPI (ISDN over BT)
 
     # --- Server block/storage ---
-    BLK_DEV_NBD = mkForce (option no); # Network block device
-    BLK_DEV_RBD = mkForce (option no); # Ceph/RADOS block
-    TARGET_CORE = mkForce (option no); # SCSI target
-    ISCSI_TCP = mkForce (option no); # iSCSI initiator
-    NVME_TARGET = mkForce (option no); # NVMe-oF target
+    BLK_DEV_NBD = option no; # Network block device
+    BLK_DEV_RBD = option no; # Ceph/RADOS block
+    TARGET_CORE = option no; # SCSI target
+    ISCSI_TCP = option no; # iSCSI initiator
+    NVME_TARGET = option no; # NVMe-oF target
 
     # --- Unused large subsystems ---
-    IP_VS = mkForce (option no); # IPVS load balancer (~30k LOC, only k8s IPVS mode)
-    NFSD = mkForce (option no); # NFS server (~25k LOC, client kept via NFS_FS)
-    QUOTA = mkForce (option no); # Disk quotas (~10k LOC, multi-user server feature)
+    IP_VS = option no; # IPVS load balancer (~30k LOC, only k8s IPVS mode)
+    NFSD = option no; # NFS server (~25k LOC, client kept via NFS_FS)
+    QUOTA = option no; # Disk quotas (~10k LOC, multi-user server feature)
 
     # --- Legacy/deprecated hardware & interfaces ---
-    PCSPKR_PLATFORM = mkForce (option no); # PC speaker
-    CDROM_PKTCDVD = mkForce (option no); # Packet writing to CD/DVDs
-    EFI_VARS = mkForce (option no); # Old sysfs EFI vars (EFIVAR_FS supersedes)
-    RAID_AUTODETECT = mkForce (option no); # Legacy MD RAID autodetect
-    FB_DEVICE = mkForce (option no); # Legacy /dev/fb* (DRM/KMS supersedes)
-    FRAMEBUFFER_CONSOLE_LEGACY_ACCELERATION = mkForce (option no); # Legacy fbcon hw accel
-    X86_MPPARSE = mkForce (option no); # MPS tables (pre-ACPI SMP)
-    X86_EXTENDED_PLATFORM = mkForce (option no); # Non-standard x86 platforms (SGI UV, etc.)
-    GART_IOMMU = mkForce (option no); # AMD K8-era GART IOMMU (modern uses AMD-Vi)
-    REROUTE_FOR_BROKEN_BOOT_IRQS = mkForce (option no); # Workaround for ancient BIOS IRQ routing
-    MSDOS_PARTITION = mkForce (option no); # MBR partition table (GPT era)
-    ACCESSIBILITY = mkForce (option no); # Speakup screen reader
+    PCSPKR_PLATFORM = option no; # PC speaker
+    CDROM_PKTCDVD = option no; # Packet writing to CD/DVDs
+    EFI_VARS = option no; # Old sysfs EFI vars (EFIVAR_FS supersedes)
+    RAID_AUTODETECT = option no; # Legacy MD RAID autodetect
+    FB_DEVICE = option no; # Legacy /dev/fb* (DRM/KMS supersedes)
+    FRAMEBUFFER_CONSOLE_LEGACY_ACCELERATION = option no; # Legacy fbcon hw accel
+    X86_MPPARSE = option no; # MPS tables (pre-ACPI SMP)
+    X86_EXTENDED_PLATFORM = option no; # Non-standard x86 platforms (SGI UV, etc.)
+    GART_IOMMU = option no; # AMD K8-era GART IOMMU (modern uses AMD-Vi)
+    REROUTE_FOR_BROKEN_BOOT_IRQS = option no; # Workaround for ancient BIOS IRQ routing
+    MSDOS_PARTITION = option no; # MBR partition table (GPT era)
+    ACCESSIBILITY = option no; # Speakup screen reader
+
+    # --- Unused platform drivers ---
+    CHROME_PLATFORMS = option no; # ChromeOS platform drivers
+    MACINTOSH_DRIVERS = option no; # Apple hardware drivers
+    APPLE_PROPERTIES = option no; # Apple device properties
+    XEN = option no; # Xen hypervisor (we use KVM)
+    SURFACE_PLATFORMS = option no; # Microsoft Surface
 
     # --- Virtual test drivers ---
-    VIDEO_VIVID = mkForce (option no); # Virtual video test driver
+    VIDEO_VIVID = option no; # Virtual video test driver
 
     # --- Child options of disabled parents ---
     # When a parent config is forced off, its children vanish from kconfig.
     # common-config.nix sets these without `option`, so we override them here
     # with `option` to suppress "unused option" errors.
-    AIC79XX_DEBUG_ENABLE = mkForce (option no);
-    AIC7XXX_DEBUG_ENABLE = mkForce (option no);
-    AIC94XX_DEBUG = mkForce (option no);
-    CEPH_FSCACHE = mkForce (option no);
-    CEPH_FS_POSIX_ACL = mkForce (option no);
-    CIFS_DFS_UPCALL = mkForce (option no);
-    CIFS_FSCACHE = mkForce (option no);
-    CIFS_UPCALL = mkForce (option no);
-    CIFS_XATTR = mkForce (option no);
-    DRM_NOUVEAU_SVM = mkForce (option no);
-    F2FS_FS_COMPRESSION = mkForce (option no);
-    INFINIBAND_IPOIB = mkForce (option no);
-    INFINIBAND_IPOIB_CM = mkForce (option no);
-    IP_VS_IPV6 = mkForce (option no);
-    IP_VS_PROTO_AH = mkForce (option no);
-    IP_VS_PROTO_ESP = mkForce (option no);
-    IP_VS_PROTO_TCP = mkForce (option no);
-    IP_VS_PROTO_UDP = mkForce (option no);
-    JOYSTICK_PSXPAD_SPI_FF = mkForce (option no);
-    MEGARAID_NEWGEN = mkForce (option no);
-    MTD_COMPLEX_MAPPINGS = mkForce (option no);
-    NFSD_V3_ACL = mkForce (option no);
-    NFSD_V4 = mkForce (option no);
-    NFSD_V4_SECURITY_LABEL = mkForce (option no);
-    NFS_LOCALIO = mkForce (option no);
-    NVME_TARGET_AUTH = mkForce (option no);
-    NVME_TARGET_PASSTHRU = mkForce (option no);
-    NVME_TARGET_TCP_TLS = mkForce (option no);
-    SCSI_LOWLEVEL_PCMCIA = mkForce (option no);
-    SLIP_COMPRESSED = mkForce (option no);
-    SLIP_SMART = mkForce (option no);
-    SQUASHFS_CHOICE_DECOMP_BY_MOUNT = mkForce (option no);
-    SQUASHFS_FILE_DIRECT = mkForce (option no);
-    SQUASHFS_LZ4 = mkForce (option no);
-    SQUASHFS_LZO = mkForce (option no);
-    SQUASHFS_XATTR = mkForce (option no);
-    SQUASHFS_XZ = mkForce (option no);
-    SQUASHFS_ZLIB = mkForce (option no);
-    SQUASHFS_ZSTD = mkForce (option no);
-    STAGING_MEDIA = mkForce (option no);
-  };
+    AIC79XX_DEBUG_ENABLE = option no;
+    AIC7XXX_DEBUG_ENABLE = option no;
+    AIC94XX_DEBUG = option no;
+    CEPH_FSCACHE = option no;
+    CEPH_FS_POSIX_ACL = option no;
+    CIFS_DFS_UPCALL = option no;
+    CIFS_FSCACHE = option no;
+    CIFS_UPCALL = option no;
+    CIFS_XATTR = option no;
+    DRM_NOUVEAU_SVM = option no;
+    F2FS_FS_COMPRESSION = option no;
+    INFINIBAND_IPOIB = option no;
+    INFINIBAND_IPOIB_CM = option no;
+    IP_VS_IPV6 = option no;
+    IP_VS_PROTO_AH = option no;
+    IP_VS_PROTO_ESP = option no;
+    IP_VS_PROTO_TCP = option no;
+    IP_VS_PROTO_UDP = option no;
+    JOYSTICK_PSXPAD_SPI_FF = option no;
+    MEGARAID_NEWGEN = option no;
+    MTD_COMPLEX_MAPPINGS = option no;
+    NFSD_V3_ACL = option no;
+    NFSD_V4 = option no;
+    NFSD_V4_SECURITY_LABEL = option no;
+    NFS_LOCALIO = option no;
+    NVME_TARGET_AUTH = option no;
+    NVME_TARGET_PASSTHRU = option no;
+    NVME_TARGET_TCP_TLS = option no;
+    SCSI_LOWLEVEL_PCMCIA = option no;
+    SLIP_COMPRESSED = option no;
+    SLIP_SMART = option no;
+    SQUASHFS_CHOICE_DECOMP_BY_MOUNT = option no;
+    SQUASHFS_FILE_DIRECT = option no;
+    SQUASHFS_LZ4 = option no;
+    SQUASHFS_LZO = option no;
+    SQUASHFS_XATTR = option no;
+    SQUASHFS_XZ = option no;
+    SQUASHFS_ZLIB = option no;
+    SQUASHFS_ZSTD = option no;
+    STAGING_MEDIA = option no;
+  });
 
   networkingConfig = optionalAttrs cfg.networking {
     TCP_CONG_BBR = yes;
@@ -658,14 +725,14 @@ let
     DEFAULT_FQ_CODEL = yes;
   };
 
-  rustLtoConfig = optionalAttrs (cfg.rust && cfg.lto != "none") {
-    DEBUG_INFO_BTF = mkForce no;
-    NOVA_CORE = mkForce (option no);
-    NET_SCH_BPF = mkForce (option no);
-    SCHED_CLASS_EXT = mkForce (option no);
-    MODULE_ALLOW_BTF_MISMATCH = mkForce (option no);
-    MODVERSIONS = mkForce no;
-  };
+  rustLtoConfig = optionalAttrs (cfg.rust && cfg.lto != "none") (forceAll {
+    DEBUG_INFO_BTF = no;
+    NOVA_CORE = option no;
+    NET_SCH_BPF = option no;
+    SCHED_CLASS_EXT = option no;
+    MODULE_ALLOW_BTF_MISMATCH = option no;
+    MODVERSIONS = no;
+  });
 
   ltoConfig =
     {
@@ -786,52 +853,54 @@ in
     };
 
     cpuArch = mkOption {
-      type = types.nullOr (types.enum [
-        "GENERIC_CPU"
-        "X86_NATIVE_CPU"
-        # AMD
-        "MK8"
-        "MK8SSE3"
-        "MK10"
-        "MBARCELONA"
-        "MBOBCAT"
-        "MJAGUAR"
-        "MBULLDOZER"
-        "MPILEDRIVER"
-        "MSTEAMROLLER"
-        "MEXCAVATOR"
-        "MZEN"
-        "MZEN2"
-        "MZEN3"
-        "MZEN4"
-        "MZEN5"
-        # Intel
-        "MPSC"
-        "MCORE2"
-        "MNEHALEM"
-        "MWESTMERE"
-        "MSILVERMONT"
-        "MGOLDMONT"
-        "MGOLDMONTPLUS"
-        "MSANDYBRIDGE"
-        "MIVYBRIDGE"
-        "MHASWELL"
-        "MBROADWELL"
-        "MSKYLAKE"
-        "MSKYLAKEX"
-        "MCANNONLAKE"
-        "MICELAKE_CLIENT"
-        "MICELAKE_SERVER"
-        "MCOOPERLAKE"
-        "MCASCADELAKE"
-        "MTIGERLAKE"
-        "MSAPPHIRERAPIDS"
-        "MROCKETLAKE"
-        "MALDERLAKE"
-        "MRAPTORLAKE"
-        "MMETEORLAKE"
-        "MEMERALDRAPIDS"
-      ]);
+      type = types.nullOr (
+        types.enum [
+          "GENERIC_CPU"
+          "X86_NATIVE_CPU"
+          # AMD
+          "MK8"
+          "MK8SSE3"
+          "MK10"
+          "MBARCELONA"
+          "MBOBCAT"
+          "MJAGUAR"
+          "MBULLDOZER"
+          "MPILEDRIVER"
+          "MSTEAMROLLER"
+          "MEXCAVATOR"
+          "MZEN"
+          "MZEN2"
+          "MZEN3"
+          "MZEN4"
+          "MZEN5"
+          # Intel
+          "MPSC"
+          "MCORE2"
+          "MNEHALEM"
+          "MWESTMERE"
+          "MSILVERMONT"
+          "MGOLDMONT"
+          "MGOLDMONTPLUS"
+          "MSANDYBRIDGE"
+          "MIVYBRIDGE"
+          "MHASWELL"
+          "MBROADWELL"
+          "MSKYLAKE"
+          "MSKYLAKEX"
+          "MCANNONLAKE"
+          "MICELAKE_CLIENT"
+          "MICELAKE_SERVER"
+          "MCOOPERLAKE"
+          "MCASCADELAKE"
+          "MTIGERLAKE"
+          "MSAPPHIRERAPIDS"
+          "MROCKETLAKE"
+          "MALDERLAKE"
+          "MRAPTORLAKE"
+          "MMETEORLAKE"
+          "MEMERALDRAPIDS"
+        ]
+      );
       default = null;
       description = "CPU micro-architecture Kconfig target. Requires extras group.";
       example = "MZEN5";
