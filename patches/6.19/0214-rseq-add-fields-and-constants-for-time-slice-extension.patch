@@ -1,7 +1,7 @@
-From bca72afcfb4b89d1dd9d526911ee3eb33e35390c Mon Sep 17 00:00:00 2001
+From 4bb6782a8d56f819d8ff304d5bd9152bafe6678f Mon Sep 17 00:00:00 2001
 From: Amaan Qureshi <git@amaanq.com>
 Date: Fri, 13 Feb 2026 23:10:27 -0500
-Subject: [PATCH] rseq: Add fields and constants for time slice extension
+Subject: [PATCH 01/12] rseq: Add fields and constants for time slice extension
 
 ---
  Documentation/userspace-api/index.rst |   1 +

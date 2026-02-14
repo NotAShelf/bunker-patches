@@ -1,8 +1,13 @@
-From 43c58f2ea44100cc19b1ec3e5601833763ad9dc0 Mon Sep 17 00:00:00 2001
-From: Amaan Qureshi <git@amaanq.com>
-Date: Fri, 13 Feb 2026 23:10:40 -0500
-Subject: [PATCH] entry: Hook up rseq time slice extension
+From a6f1fb0f89893508a2460c2ef7e2f5aa3059a795 Mon Sep 17 00:00:00 2001
+From: Thomas Gleixner <tglx@linutronix.de>
+Date: Mon, 15 Dec 2025 17:52:31 +0100
+Subject: [PATCH 09/12] entry: Hook up rseq time slice extension
 
+Wire the grant decision function up in exit_to_user_mode_loop()
+
+Signed-off-by: Thomas Gleixner <tglx@linutronix.de>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Link: https://patch.msgid.link/20251215155709.258157362@linutronix.de
 ---
  kernel/entry/common.c | 27 +++++++++++++++++++++++++--
  1 file changed, 25 insertions(+), 2 deletions(-)

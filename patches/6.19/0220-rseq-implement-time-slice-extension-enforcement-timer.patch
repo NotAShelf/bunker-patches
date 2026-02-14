@@ -1,7 +1,7 @@
-From 6cfc31040f43af2e9375b70ce280ce5018d4be12 Mon Sep 17 00:00:00 2001
+From f23057a43864f623bd595b53015a52e4a45264bf Mon Sep 17 00:00:00 2001
 From: Amaan Qureshi <git@amaanq.com>
 Date: Fri, 13 Feb 2026 23:10:38 -0500
-Subject: [PATCH] rseq: Implement time slice extension enforcement timer
+Subject: [PATCH 07/12] rseq: Implement time slice extension enforcement timer
 
 ---
  Documentation/admin-guide/sysctl/kernel.rst |  11 ++

@@ -1,7 +1,7 @@
-From 7b6d62bbbef3b80bb686a6c9fd65880f9d2657fb Mon Sep 17 00:00:00 2001
+From 5aede2e8afec07cae1e65c08970ef7ce65b50330 Mon Sep 17 00:00:00 2001
 From: Amaan Qureshi <git@amaanq.com>
 Date: Fri, 13 Feb 2026 23:10:30 -0500
-Subject: [PATCH] rseq: Add statistics for time slice extensions
+Subject: [PATCH 03/12] rseq: Add statistics for time slice extensions
 
 ---
  include/linux/rseq_entry.h |  5 +++++

@@ -1,7 +1,8 @@
-From 3dc21585fe2cdf589bd485c744260d7f39a23802 Mon Sep 17 00:00:00 2001
+From 3087e38ead90fe511ce793b207869619680d93e3 Mon Sep 17 00:00:00 2001
 From: Amaan Qureshi <git@amaanq.com>
 Date: Fri, 13 Feb 2026 23:10:36 -0500
-Subject: [PATCH] rseq: Implement syscall entry work for time slice extensions
+Subject: [PATCH 06/12] rseq: Implement syscall entry work for time slice
+ extensions
 
 ---
  include/linux/entry-common.h  |  2 +-

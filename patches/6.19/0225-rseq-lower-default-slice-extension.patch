@@ -1,8 +1,32 @@
-From d06368d409be681d3701f439f725f408951c4b83 Mon Sep 17 00:00:00 2001
-From: Amaan Qureshi <git@amaanq.com>
-Date: Fri, 13 Feb 2026 23:10:46 -0500
-Subject: [PATCH] rseq: Lower default slice extension
+From 1127696b7e625704e6762aa9f3e6cbb4d07488de Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Wed, 21 Jan 2026 14:25:04 +0100
+Subject: [PATCH 12/12] rseq: Lower default slice extension
 
+Change the minimum slice extension to 5 usec.
+
+Since slice_test selftest reaches a staggering ~350 nsec extension:
+
+Task: slice_test    Mean: 350.266 ns
+  Latency (us)    | Count
+  ------------------------------
+  EXPIRED         | 238
+  0 us            | 143189
+  1 us            | 167
+  2 us            | 26
+  3 us            | 11
+  4 us            | 28
+  5 us            | 31
+  6 us            | 22
+  7 us            | 23
+  8 us            | 32
+  9 us            | 16
+  10 us           | 35
+
+Lower the minimal (and default) value to 5 usecs -- which is still massive.
+
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Link: https://patch.msgid.link/20260121143208.073200729@infradead.org
 ---
  Documentation/userspace-api/rseq.rst | 2 +-
  kernel/rseq.c                        | 2 +-

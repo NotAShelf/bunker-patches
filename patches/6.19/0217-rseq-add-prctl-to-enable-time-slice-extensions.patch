@@ -1,7 +1,7 @@
-From c9953bcfe38c746567625d1395a0be6e86a60f2f Mon Sep 17 00:00:00 2001
+From 0acaaf1af0f053ebe0fa61a3cc4eff8e8f053a07 Mon Sep 17 00:00:00 2001
 From: Amaan Qureshi <git@amaanq.com>
 Date: Fri, 13 Feb 2026 23:10:32 -0500
-Subject: [PATCH] rseq: Add prctl() to enable time slice extensions
+Subject: [PATCH 04/12] rseq: Add prctl() to enable time slice extensions
 
 ---
  include/linux/rseq.h       |  9 +++++++

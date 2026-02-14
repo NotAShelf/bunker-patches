@@ -1,7 +1,7 @@
-From e45fa9159e5b6d57cd61c6573d2952c7e83e3894 Mon Sep 17 00:00:00 2001
+From 7f6d1e9025a2b25917c28da2825d45218f5c10f6 Mon Sep 17 00:00:00 2001
 From: Amaan Qureshi <git@amaanq.com>
 Date: Fri, 13 Feb 2026 23:10:29 -0500
-Subject: [PATCH] rseq: Provide static branch for time slice extensions
+Subject: [PATCH 02/12] rseq: Provide static branch for time slice extensions
 
 ---
  Documentation/admin-guide/kernel-parameters.txt |  5 +++++

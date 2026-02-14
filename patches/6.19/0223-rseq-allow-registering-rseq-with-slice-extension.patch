@@ -1,8 +1,15 @@
-From b7a7035beddc71b3d95dc89dfbe8d19fded4e2cb Mon Sep 17 00:00:00 2001
-From: Amaan Qureshi <git@amaanq.com>
-Date: Fri, 13 Feb 2026 23:10:42 -0500
-Subject: [PATCH] rseq: Allow registering RSEQ with slice extension
+From 46fdff1a2fe8032d7da5c17eb1de8aa89e43cf1d Mon Sep 17 00:00:00 2001
+From: Peter Zijlstra <peterz@infradead.org>
+Date: Mon, 19 Jan 2026 11:23:57 +0100
+Subject: [PATCH 10/12] rseq: Allow registering RSEQ with slice extension
 
+Since glibc cares about the number of syscalls required to initialize a new
+thread, allow initializing rseq with slice extension on. This avoids having to
+do another prctl().
+
+Requested-by: Mathieu Desnoyers <mathieu.desnoyers@efficios.com>
+Signed-off-by: Peter Zijlstra (Intel) <peterz@infradead.org>
+Link: https://patch.msgid.link/20260121143207.814193010@infradead.org
 ---
  include/uapi/linux/rseq.h |  3 ++-
  kernel/rseq.c             | 12 ++++++++++--
