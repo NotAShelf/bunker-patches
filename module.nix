@@ -288,6 +288,7 @@ let
   };
 
   hardenedConfig = optionalAttrs cfg.hardened {
+    # --- Security features ---
     STRICT_DEVMEM = mkForce (option no);
     IO_STRICT_DEVMEM = mkForce (option no);
     CFI = yes;
@@ -295,6 +296,45 @@ let
     ZERO_CALL_USED_REGS = yes;
     SECURITY_SAFESETID = yes;
 
+    # --- Attack surface reduction (KSPP) ---
+    USELIB = mkForce (option no); # a.out uselib() syscall
+    SYSFS_SYSCALL = mkForce (option no); # old sysfs() syscall
+    KEXEC = mkForce (option no); # bypasses secure boot chain
+    X86_IOPL_IOPERM = mkForce (option no); # IOPL/IOPERM syscalls
+    X86_VSYSCALL_EMULATION = mkForce (option no); # legacy vsyscall page
+    X86_X32_ABI = mkForce (option no); # x32 ABI (exotic, deprecated)
+    X86_SGX = mkForce (option no); # Intel SGX enclaves
+    DEVPORT = mkForce (option no); # /dev/port I/O port access
+
+    # --- Unused security modules ---
+    SECURITY_SELINUX = mkForce (option no); # SELinux (~20k LOC, NixOS uses AppArmor)
+    SECURITY_TOMOYO = mkForce (option no); # TOMOYO (~10k LOC, unused on NixOS)
+
+    # --- Obsolete crypto ---
+    CRYPTO_USER_API_ENABLE_OBSOLETE = mkForce (option no); # Gates ANUBIS/KHAZAD/SEED/TEA
+    CRYPTO_FCRYPT = mkForce (option no); # fcrypt (only for dead AFS/RxRPC)
+
+    # --- Debug/testing infrastructure ---
+    KCOV = mkForce (option no); # Syzkaller fuzzing infra
+    GCOV_KERNEL = mkForce (option no); # Kernel code coverage
+    FAULT_INJECTION = mkForce (option no); # Debug fault injection framework
+    KASAN = mkForce (option no); # Kernel Address Sanitizer
+    KMEMLEAK = mkForce (option no); # Kernel memory leak detector
+    PROVE_LOCKING = mkForce (option no); # Lock dependency validator (lockdep)
+    LOCK_STAT = mkForce (option no); # Lock contention statistics
+    NOTIFIER_ERROR_INJECTION = mkForce (option no); # Error injection for notifier chains
+    DEBUG_PAGEALLOC = mkForce (option no); # Debug page allocation
+    KUNIT = mkForce (option no); # Kernel unit testing framework
+    EXT4_DEBUG = mkForce (option no); # ext4 debug
+    JBD2_DEBUG = mkForce (option no); # ext4 journaling debug
+    SLUB_DEBUG = mkForce (option no); # SLUB allocator debug
+    DYNAMIC_DEBUG = mkForce (option no); # Runtime pr_debug control
+
+    # --- Child options of disabled security parents ---
+    X86_SGX_KVM = mkForce (option no);
+  };
+
+  trimmedConfig = optionalAttrs cfg.trimmed {
     # --- Dead network hardware ---
     ARCNET = mkForce (option no); # 1970s token-passing network
     FDDI = mkForce (option no); # 1980s fiber ring
@@ -435,7 +475,6 @@ let
     INTEL_IOATDMA = mkForce (option no); # old Xeon DMA engine (selects DCA)
     DCA = mkForce (option no); # Direct Cache Access
     HANGCHECK_TIMER = mkForce (option no); # Server cluster heartbeat
-    DEVPORT = mkForce (option no); # /dev/port I/O port access
     HOTPLUG_PCI_CPCI = mkForce (option no); # CompactPCI hotplug (industrial)
     BLK_DEV_DRBD = mkForce (option no); # DRBD distributed block replication
     MOUSE_SERIAL = mkForce (option no); # Serial mice (RS-232)
@@ -549,51 +588,21 @@ let
     NFSD = mkForce (option no); # NFS server (~25k LOC, client kept via NFS_FS)
     QUOTA = mkForce (option no); # Disk quotas (~10k LOC, multi-user server feature)
 
-    # --- Legacy/deprecated ---
-    USELIB = mkForce (option no); # a.out uselib() syscall
-    SYSFS_SYSCALL = mkForce (option no); # old sysfs() syscall
+    # --- Legacy/deprecated hardware & interfaces ---
     PCSPKR_PLATFORM = mkForce (option no); # PC speaker
-    KEXEC = mkForce (option no); # kexec (disabled at runtime anyway)
     CDROM_PKTCDVD = mkForce (option no); # Packet writing to CD/DVDs
     EFI_VARS = mkForce (option no); # Old sysfs EFI vars (EFIVAR_FS supersedes)
     RAID_AUTODETECT = mkForce (option no); # Legacy MD RAID autodetect
     FB_DEVICE = mkForce (option no); # Legacy /dev/fb* (DRM/KMS supersedes)
     FRAMEBUFFER_CONSOLE_LEGACY_ACCELERATION = mkForce (option no); # Legacy fbcon hw accel
-    X86_IOPL_IOPERM = mkForce (option no); # IOPL/IOPERM syscalls (KSPP)
-    X86_VSYSCALL_EMULATION = mkForce (option no); # Legacy vsyscall page (KSPP)
-    X86_X32_ABI = mkForce (option no); # x32 ABI (exotic, deprecated)
     X86_MPPARSE = mkForce (option no); # MPS tables (pre-ACPI SMP)
     X86_EXTENDED_PLATFORM = mkForce (option no); # Non-standard x86 platforms (SGI UV, etc.)
     GART_IOMMU = mkForce (option no); # AMD K8-era GART IOMMU (modern uses AMD-Vi)
     REROUTE_FOR_BROKEN_BOOT_IRQS = mkForce (option no); # Workaround for ancient BIOS IRQ routing
     MSDOS_PARTITION = mkForce (option no); # MBR partition table (GPT era)
     ACCESSIBILITY = mkForce (option no); # Speakup screen reader
-    X86_SGX = mkForce (option no); # Intel SGX enclaves
-    SECURITY_SELINUX = mkForce (option no); # SELinux (~20k LOC, NixOS uses AppArmor)
-    SECURITY_TOMOYO = mkForce (option no); # TOMOYO (~10k LOC, unused on NixOS)
 
-    # --- Obsolete crypto ---
-    CRYPTO_USER_API_ENABLE_OBSOLETE = mkForce (option no); # Gates ANUBIS/KHAZAD/SEED/TEA
-    CRYPTO_FCRYPT = mkForce (option no); # fcrypt (only for dead AFS/RxRPC)
-
-    # --- Debug/testing infrastructure ---
-    KCOV = mkForce (option no); # Syzkaller fuzzing infra
-    GCOV_KERNEL = mkForce (option no); # Kernel code coverage
-    FAULT_INJECTION = mkForce (option no); # Debug fault injection framework
-    KASAN = mkForce (option no); # Kernel Address Sanitizer
-    KMEMLEAK = mkForce (option no); # Kernel memory leak detector
-    PROVE_LOCKING = mkForce (option no); # Lock dependency validator (lockdep)
-    LOCK_STAT = mkForce (option no); # Lock contention statistics
-    NOTIFIER_ERROR_INJECTION = mkForce (option no); # Error injection for notifier chains
-    DEBUG_PAGEALLOC = mkForce (option no); # Debug page allocation
-    KUNIT = mkForce (option no); # Kernel unit testing framework
-    EXT4_DEBUG = mkForce (option no); # ext4 debug
-    JBD2_DEBUG = mkForce (option no); # ext4 journaling debug
-    SLUB_DEBUG = mkForce (option no); # SLUB allocator debug
-    DYNAMIC_DEBUG = mkForce (option no); # Runtime pr_debug control
-
-    # --- VM guest (not applicable to bare-metal desktop) ---
-    DRM_VIRTIO_GPU = mkForce (option no); # Virtio GPU
+    # --- Virtual test drivers ---
     VIDEO_VIVID = mkForce (option no); # Virtual video test driver
 
     # --- Child options of disabled parents ---
@@ -640,7 +649,6 @@ let
     SQUASHFS_ZLIB = mkForce (option no);
     SQUASHFS_ZSTD = mkForce (option no);
     STAGING_MEDIA = mkForce (option no);
-    X86_SGX_KVM = mkForce (option no);
   };
 
   networkingConfig = optionalAttrs cfg.networking {
@@ -689,6 +697,7 @@ let
       baseConfig
       // interactiveConfig
       // hardenedConfig
+      // trimmedConfig
       // networkingConfig
       // rustLtoConfig
       // ltoConfig
@@ -750,6 +759,12 @@ in
       type = types.bool;
       default = true;
       description = "Enable linux-hardened security patches (CFI, RANDSTRUCT, slab hardening, etc.).";
+    };
+
+    trimmed = mkOption {
+      type = types.bool;
+      default = true;
+      description = "Disable dead/legacy modules and subsystems (old hardware, dead protocols, unused filesystems, etc.).";
     };
 
     networking = mkOption {
