@@ -1,3 +1,9 @@
-linux/
-linux-cachyos/
-.claude/
+*
+
+!.gitignore
+!flake.nix
+!module.nix
+
+!patches/
+!patches/*/
+!patches/*/*.patch
