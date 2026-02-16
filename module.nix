@@ -961,7 +961,7 @@ in
       system.replaceRuntimeDependencies = [
         {
           original = config.boot.kernelPackages.kernel.dev;
-          replacement = pkgs.emptyDirectory;
+          replacement = pkgs.runCommand config.boot.kernelPackages.kernel.dev.name { } "mkdir $out";
         }
       ];
     }
