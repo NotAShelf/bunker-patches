@@ -804,6 +804,7 @@ let
   discardModuleDevRefs =
     drv:
     drv.overrideAttrs (old: {
+      __structuredAttrs = old.__structuredAttrs or true;
       unsafeDiscardReferences = (old.unsafeDiscardReferences or { }) // {
         out = true;
       };
